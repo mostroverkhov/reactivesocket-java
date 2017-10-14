@@ -8,18 +8,20 @@ import io.rsocket.exceptions.RejectedSetupException;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxProcessor;
+import reactor.core.publisher.ReplayProcessor;
 import reactor.util.annotation.NonNull;
 import reactor.util.annotation.Nullable;
 
-/**
- * Grants lease to requester rsocket for incoming LEASE frames, and responder rsocket for outgoing
- * LEASE frames
- */
+/** Grants lease to requester for incoming LEASE frames, and responder for outgoing LEASE frames */
 abstract class LeaseGranter {
   protected final DuplexConnection senderConnection;
   private final LeaseManager requesterLeaseManager;
   private final LeaseManager responderLeaseManager;
-  protected Consumer<Throwable> errorConsumer;
+  protected final Consumer<Throwable> errorConsumer;
+  private final FluxProcessor<Lease, Lease> inboundLease =
+      ReplayProcessor.<Lease>create(1).serialize();
 
   LeaseGranter(
       @NonNull DuplexConnection senderConnection,
@@ -50,11 +52,17 @@ abstract class LeaseGranter {
         senderConnection, requesterLeaseManager, responderLeaseManager, errorConsumer);
   }
 
-  abstract Consumer<Lease> grantedLeasesReceiver();
+  public abstract Consumer<Lease> grantedLeasesReceiver();
 
-  abstract void grantLease(int numberOfRequests, int timeToLive, @Nullable ByteBuffer metadata);
+  public abstract void grantLease(
+      int numberOfRequests, int timeToLive, @Nullable ByteBuffer metadata);
+
+  public Flux<Lease> inboundLease() {
+    return inboundLease;
+  }
 
   void leaseReceived(@Nonnull Lease lease) {
+    inboundLease.onNext(lease);
     requesterLeaseManager.leaseGranted(lease);
   }
 
@@ -80,7 +88,7 @@ abstract class LeaseGranter {
     }
 
     @Override
-    Consumer<Lease> grantedLeasesReceiver() {
+    public Consumer<Lease> grantedLeasesReceiver() {
       return f -> {
         synchronized (this) {
           leaseReceived = true;
@@ -97,7 +105,7 @@ abstract class LeaseGranter {
     }
 
     @Override
-    void grantLease(int numberOfRequests, int timeToLive, ByteBuffer metadata) {
+    public void grantLease(int numberOfRequests, int timeToLive, ByteBuffer metadata) {
       LeaseImpl lease = new LeaseImpl(numberOfRequests, timeToLive, metadata);
       synchronized (this) {
         if (!leaseReceived) {
@@ -122,7 +130,7 @@ abstract class LeaseGranter {
     }
 
     @Override
-    Consumer<Lease> grantedLeasesReceiver() {
+    public Consumer<Lease> grantedLeasesReceiver() {
       return f -> {
         synchronized (this) {
           if (!leaseGranted) {
@@ -142,7 +150,7 @@ abstract class LeaseGranter {
     }
 
     @Override
-    void grantLease(int numberOfRequests, int timeToLive, @Nullable ByteBuffer metadata) {
+    public void grantLease(int numberOfRequests, int timeToLive, @Nullable ByteBuffer metadata) {
       synchronized (this) {
         if (validState) {
           leaseGranted = true;
