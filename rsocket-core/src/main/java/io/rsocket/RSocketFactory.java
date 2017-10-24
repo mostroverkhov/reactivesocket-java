@@ -267,7 +267,8 @@ public class RSocketFactory {
         this.transportClient = transportClient;
         leaseConsumer.ifPresent(
             leaseConsumer ->
-                addConnectionPlugin(LeaseInterceptor.ofClient(errorConsumer, leaseConsumer)));
+                addConnectionPlugin(new PerConnectionInterceptor(
+                        () -> LeaseInterceptor.ofClient(errorConsumer, leaseConsumer))));
       }
 
       @Override
@@ -391,9 +392,11 @@ public class RSocketFactory {
 
         if (leaseControlConsumer.isPresent()) {
           addConnectionPlugin(
-              LeaseInterceptor.ofServer(errorConsumer, leaseControlConsumer.get(), true));
+              new PerConnectionInterceptor(() -> LeaseInterceptor.ofServer(errorConsumer, leaseControlConsumer.get(), true)));
         } else {
-          addConnectionPlugin(LeaseInterceptor.ofServer(errorConsumer, connRef -> {}, false));
+          addConnectionPlugin(
+                  new PerConnectionInterceptor(() ->
+                  LeaseInterceptor.ofServer(errorConsumer, connRef -> {}, false)));
         }
       }
 

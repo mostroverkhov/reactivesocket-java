@@ -46,6 +46,11 @@ public class LeaseClientServeReqRep {
             .start()
             .block();
 
+      clientLeaseControl.leaseConnection().flatMapMany(LeaseConnectionRef::inboundLease).subscribe(s ->
+              LOGGER.info(String.format("Client received lease: Reqs: %d TTL: %d",
+                      s.getAllowedRequests(),
+                      s.getTtl())));
+
     Flux.interval(ofSeconds(1))
         .flatMap(
             signal -> {

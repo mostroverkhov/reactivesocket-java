@@ -14,12 +14,16 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.reactivestreams.Publisher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.UnicastProcessor;
 
 public class LeaseInterceptor implements DuplexConnectionInterceptor {
+  private static final String CLIENT = "Client";
+  private static final String SERVER = "Server";
 
   private final LeaseGranterFactory leaseGranterFactory;
   private final Map<Type, LeaseConnectionFactory> factories;
@@ -80,38 +84,41 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
       Consumer<Throwable> errCons,
       Consumer<LeaseConnectionRef> leaseConsumer,
       boolean leaseEnabled) {
+    String classifier = SERVER;
     Context ctx = new Context();
     return of(
         errCons,
         leaseConsumer,
         LeaseGranter::ofServer,
-        (conn, args) -> new LeaseInConnection(conn, ctx, args.getLeaseConsumer()),
+        (conn, args) -> new LeaseInConnection(classifier,conn, ctx, args.getLeaseConsumer()),
         (conn, args) -> new ServerLeaseSetupConnection(conn, ctx, leaseEnabled),
-        (conn, args) -> new RequestInboundConnection(conn, ctx, args.getResponderLeaseManager()),
-        (conn, args) -> new RequestOutboundConnection(conn, ctx, args.getRequesterLeaseManager()));
+        (conn, args) -> new RequestInboundConnection(classifier,conn, ctx, args.getResponderLeaseManager()),
+        (conn, args) -> new RequestOutboundConnection(classifier,conn, ctx, args.getRequesterLeaseManager()));
   }
 
   public static LeaseInterceptor ofClient(
       Consumer<Throwable> errCons, Consumer<LeaseConnectionRef> leaseConsumer) {
     Context ctx = new Context(true);
-
+    String classifier = CLIENT;
     return of(
         errCons,
         leaseConsumer,
         LeaseGranter::ofClient,
-        (conn, args) -> new LeaseInConnection(conn, ctx, args.getLeaseConsumer()),
+        (conn, args) -> new LeaseInConnection(classifier,conn, ctx, args.getLeaseConsumer()),
         (conn, args) -> conn,
-        (conn, args) -> new RequestOutboundConnection(conn, ctx, args.getRequesterLeaseManager()),
-        (conn, args) -> new RequestInboundConnection(conn, ctx, args.getResponderLeaseManager()));
+        (conn, args) -> new RequestOutboundConnection(classifier,conn, ctx, args.getRequesterLeaseManager()),
+        (conn, args) -> new RequestInboundConnection(classifier,conn, ctx, args.getResponderLeaseManager()));
   }
 
   abstract static class LeaseConnection extends DuplexConnectionProxy {
 
     private final Context context;
+    private final String classifier;
 
-    public LeaseConnection(DuplexConnection source, Context context) {
+    public LeaseConnection(DuplexConnection source, Context context, String classifier) {
       super(source);
       this.context = context;
+      this.classifier = classifier;
     }
 
     public void enableLease() {
@@ -120,6 +127,10 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
     public boolean isLeaseEnabled() {
       return context.isLeaseEnabled();
+    }
+
+    protected String getClassifier() {
+      return classifier;
     }
   }
 
@@ -130,7 +141,7 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
     public ServerLeaseSetupConnection(
         DuplexConnection setupConnection, Context context, boolean serverLeaseEnabled) {
-      super(setupConnection, context);
+      super(setupConnection, context,"server");
       this.serverLeaseEnabled = serverLeaseEnabled;
     }
 
@@ -164,10 +175,11 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
   abstract static class RequestConnection extends LeaseConnection {
     protected final LeaseManager leaseManager;
-
-    public RequestConnection(DuplexConnection source, Context context, LeaseManager leaseManager) {
-      super(source, context);
+    private static final Logger LOGGER = LoggerFactory.getLogger("io.rsocket.lease.RequestConnection");
+    public RequestConnection(String classifier,DuplexConnection source, Context context, LeaseManager leaseManager) {
+      super(source, context,classifier);
       this.leaseManager = leaseManager;
+      LOGGER.info(String.format("Added %s for %s",getClass().getName(),getClassifier()));
     }
 
     @Override
@@ -178,14 +190,14 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
           : 0.0;
     }
 
-    protected Frame sendRequest(Frame f) {
+    protected Frame handleFrame(Frame f) {
       if (isRequest(f)) {
         Lease lease = leaseManager.getLease();
         if (lease.isValid()) {
           leaseManager.useLease();
           return f;
         } else {
-          throw new NoLeaseException(lease);
+          throw new NoLeaseException(lease,getClassifier());
         }
       } else {
         return f;
@@ -196,17 +208,21 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
   static class RequestOutboundConnection extends RequestConnection {
 
     public RequestOutboundConnection(
-        DuplexConnection sourceConnection, Context context, LeaseManager requesterLeaseManager) {
-      super(sourceConnection, context, requesterLeaseManager);
+        String classifier,
+        DuplexConnection sourceConnection,
+        Context context,
+        LeaseManager requesterLeaseManager) {
+      super(classifier,sourceConnection, context, requesterLeaseManager);
     }
 
     @Override
-    public Mono<Void> send(Publisher<Frame> frame) {
-      if (isLeaseEnabled()) {
-        return Flux.from(frame).concatMap(f -> mono(this::sendRequest).apply(f)).then();
-      } else {
-        return super.send(frame);
-      }
+    public Mono<Void> send(Publisher<Frame> frames) {
+        return Flux.from(frames).concatMap(frame -> {
+          Function<Frame, Frame> f = isLeaseEnabled()
+                  ? this::handleFrame
+                  : Function.identity();
+            return mono(f).apply(frame);
+        }).then();
     }
 
     private Function<Frame, Mono<Frame>> mono(Function<Frame, Frame> f) {
@@ -222,17 +238,15 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
   static class RequestInboundConnection extends RequestConnection {
     public RequestInboundConnection(
-        DuplexConnection peerConnection, Context context, LeaseManager responderLeaseManager) {
-      super(peerConnection, context, responderLeaseManager);
+        String classifier, DuplexConnection peerConnection, Context context, LeaseManager responderLeaseManager) {
+      super(classifier,peerConnection, context, responderLeaseManager);
     }
 
     @Override
     public Flux<Frame> receive() {
-      if (isLeaseEnabled()) {
-        return super.receive().map(this::sendRequest);
-      } else {
-        return super.receive();
-      }
+        return super.receive().map(frame -> isLeaseEnabled()
+                ? handleFrame(frame)
+                : frame);
     }
   }
 
@@ -241,24 +255,20 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
     private final Consumer<Lease> leaseConsumer;
 
     public LeaseInConnection(
-        DuplexConnection source, Context context, Consumer<Lease> leaseConsumer) {
-      super(source, context);
+        String classifier, DuplexConnection source, Context context, Consumer<Lease> leaseConsumer) {
+      super(source, context,classifier);
       this.leaseConsumer = leaseConsumer;
     }
 
     @Override
     public Flux<Frame> receive() {
-      if (isLeaseEnabled()) {
         return super.receive()
             .doOnNext(
                 frame -> {
-                  if (isLease(frame)) {
+                  if (isLeaseEnabled() && isLease(frame)) {
                     leaseConsumer.accept(new LeaseImpl(frame));
                   }
                 });
-      } else {
-        return super.receive();
-      }
     }
 
     private static boolean isLease(Frame frame) {

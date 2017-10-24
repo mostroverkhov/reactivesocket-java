@@ -5,14 +5,17 @@ import javax.annotation.Nonnull;
 
 public class NoLeaseException extends RejectedException {
 
-  public NoLeaseException(@Nonnull Lease lease) {
-    super(leaseMessage(lease));
+  private final String tag;
+
+  public NoLeaseException(@Nonnull Lease lease, String tag) {
+    super(leaseMessage(lease,tag));
+    this.tag = tag;
   }
 
-  private static String leaseMessage(Lease lease) {
+  static String leaseMessage(Lease lease,String tag) {
     boolean expired = lease.isExpired();
     int allowedRequests = lease.getAllowedRequests();
     return String.format(
-        "Missing lease. Expired: %b, allowedRequests: %d", expired, allowedRequests);
+        "%s Missing lease. Expired: %b, allowedRequests: %d", tag,expired, allowedRequests);
   }
 }
