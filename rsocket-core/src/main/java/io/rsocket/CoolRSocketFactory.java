@@ -5,6 +5,7 @@ import io.rsocket.lease.LeaseConnectionRef;
 import io.rsocket.lease.LeaseInterceptor;
 import io.rsocket.lease.PerConnectionInterceptor;
 import io.rsocket.transport.ClientTransport;
+import io.rsocket.transport.ServerTransport;
 
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -92,8 +93,8 @@ public class CoolRSocketFactory extends RSocketFactory {
             return CoolServerStart::new;
         }
 
-        class CoolServerStart extends ServerStart {
-            CoolServerStart(Supplier transportServer) {
+        class CoolServerStart<T extends Closeable> extends ServerStart<T> {
+            CoolServerStart(Supplier<ServerTransport<T>> transportServer) {
                 super(transportServer);
 
                 if (leaseControlConsumer.isPresent()) {
