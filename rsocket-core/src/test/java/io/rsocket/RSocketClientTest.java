@@ -47,7 +47,7 @@ import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class RSocketRequesterTest {
+public class RSocketClientTest {
 
   @Rule public final ClientSocketRule rule = new ClientSocketRule();
 
@@ -191,10 +191,10 @@ public class RSocketRequesterTest {
     return streamId;
   }
 
-  public static class ClientSocketRule extends AbstractSocketRule<RSocketRequester> {
+  public static class ClientSocketRule extends AbstractSocketRule<RSocketClient> {
     @Override
-    protected RSocketRequester newRSocket() {
-      return new RSocketRequester(
+    protected RSocketClient newRSocket() {
+      return new RSocketClient(
           connection,
           throwable -> errors.add(throwable),
           StreamIdSupplier.clientSupplier(),

@@ -22,7 +22,6 @@ import io.rsocket.fragmentation.FragmentationDuplexConnection;
 import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
 import io.rsocket.internal.ClientServerInputMultiplexer;
-import io.rsocket.lease.*;
 import io.rsocket.plugins.DuplexConnectionInterceptor;
 import io.rsocket.plugins.PluginRegistry;
 import io.rsocket.plugins.Plugins;
@@ -266,8 +265,8 @@ public class RSocketFactory {
                   ClientServerInputMultiplexer multiplexer =
                       new ClientServerInputMultiplexer(connection, plugins);
 
-                  RSocketRequester rSocketRequester =
-                      new RSocketRequester(
+                  RSocketClient rSocketClient =
+                      new RSocketClient(
                           multiplexer.asClientConnection(),
                           errorConsumer,
                           StreamIdSupplier.clientSupplier(),
@@ -276,7 +275,7 @@ public class RSocketFactory {
                           missedAcks);
 
                   Mono<RSocket> wrappedRSocketClient =
-                      Mono.just(rSocketRequester).map(plugins::applyClient);
+                      Mono.just(rSocketClient).map(plugins::applyClient);
                   DuplexConnection finalConnection = connection;
 
                   return wrappedRSocketClient.flatMap(
@@ -288,7 +287,7 @@ public class RSocketFactory {
                         return wrappedRSocketServer
                             .doOnNext(
                                 rSocket ->
-                                    new RSocketResponder(
+                                    new RSocketServer(
                                         multiplexer.asServerConnection(), rSocket, errorConsumer))
                             .then(finalConnection.sendOne(setupFrame))
                             .then(wrappedRSocketClient);
@@ -380,11 +379,11 @@ public class RSocketFactory {
           return setupError(multiplexer, error);
         }
 
-        RSocketRequester rSocketRequester =
-            new RSocketRequester(
+        RSocketClient rSocketClient =
+            new RSocketClient(
                 multiplexer.asServerConnection(), errorConsumer, StreamIdSupplier.serverSupplier());
 
-        Mono<RSocket> wrappedRSocketClient = Mono.just(rSocketRequester).map(plugins::applyClient);
+        Mono<RSocket> wrappedRSocketClient = Mono.just(rSocketClient).map(plugins::applyClient);
 
         ConnectionSetupPayload setupPayload = ConnectionSetupPayload.create(setupFrame);
 
@@ -393,7 +392,7 @@ public class RSocketFactory {
                 sender -> acceptor.get().accept(setupPayload, sender).map(plugins::applyServer))
             .map(
                 handler ->
-                    new RSocketResponder(multiplexer.asClientConnection(), handler, errorConsumer))
+                    new RSocketServer(multiplexer.asClientConnection(), handler, errorConsumer))
             .then();
       }
 

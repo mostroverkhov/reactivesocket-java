@@ -38,8 +38,8 @@ import org.reactivestreams.Subscriber;
 import reactor.core.Disposable;
 import reactor.core.publisher.*;
 
-/** Client Side of a RSocket socket. Sends {@link Frame}s to a {@link RSocketResponder} */
-class RSocketRequester implements RSocket {
+/** Client Side of a RSocket socket. Sends {@link Frame}s to a {@link RSocketServer} */
+class RSocketClient implements RSocket {
 
   private static final ClosedChannelException CLOSED_CHANNEL_EXCEPTION =
       noStacktrace(new ClosedChannelException());
@@ -57,14 +57,14 @@ class RSocketRequester implements RSocket {
   private @Nullable Disposable keepAliveSendSub;
   private volatile long timeLastTickSentMs;
 
-  RSocketRequester(
+  RSocketClient(
       DuplexConnection connection,
       Consumer<Throwable> errorConsumer,
       StreamIdSupplier streamIdSupplier) {
     this(connection, errorConsumer, streamIdSupplier, Duration.ZERO, Duration.ZERO, 0);
   }
 
-  RSocketRequester(
+  RSocketClient(
       DuplexConnection connection,
       Consumer<Throwable> errorConsumer,
       StreamIdSupplier streamIdSupplier,
@@ -320,7 +320,7 @@ class RSocketRequester implements RSocket {
                     .doOnRequest(
                         l -> {
                           boolean _firstRequest = false;
-                          synchronized (RSocketRequester.this) {
+                          synchronized (RSocketClient.this) {
                             if (firstRequest) {
                               _firstRequest = true;
                               firstRequest = false;
@@ -336,7 +336,7 @@ class RSocketRequester implements RSocket {
                                               LimitableRequestPublisher.wrap(f);
                                           // Need to set this to one for first the frame
                                           wrapped.increaseRequestLimit(1);
-                                          synchronized (RSocketRequester.this) {
+                                          synchronized (RSocketClient.this) {
                                             senders.put(streamId, wrapped);
                                             receivers.put(streamId, receiver);
                                           }
@@ -405,7 +405,7 @@ class RSocketRequester implements RSocket {
   }
 
   private boolean contains(int streamId) {
-    synchronized (RSocketRequester.this) {
+    synchronized (RSocketClient.this) {
       return receivers.containsKey(streamId);
     }
   }
