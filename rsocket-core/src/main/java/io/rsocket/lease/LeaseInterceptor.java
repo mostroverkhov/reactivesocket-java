@@ -1,6 +1,8 @@
 package io.rsocket.lease;
 
 import static io.rsocket.FrameType.*;
+import static java.util.Arrays.*;
+import static java.util.Collections.*;
 
 import io.rsocket.DuplexConnection;
 import io.rsocket.DuplexConnectionProxy;
@@ -14,26 +16,22 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.reactivestreams.Publisher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.UnicastProcessor;
 
 public class LeaseInterceptor implements DuplexConnectionInterceptor {
-  private static final String CLIENT = "Client";
-  private static final String SERVER = "Server";
 
   private final LeaseGranterFactory leaseGranterFactory;
-  private final Map<Type, LeaseConnectionFactory> factories;
+  private final Map<Type, List<LeaseConnectionFactory>> factories;
   private final Consumer<LeaseConnectionRef> leaseConsumer;
   private final Consumer<Throwable> errConsumer;
   private Args args;
 
   LeaseInterceptor(
       LeaseGranterFactory leaseGranterFactory,
-      Map<Type, LeaseConnectionFactory> connFactories,
+      Map<Type, List<LeaseConnectionFactory>> connFactories,
       Consumer<LeaseConnectionRef> leaseConsumer,
       Consumer<Throwable> errConsumer) {
     this.leaseGranterFactory = leaseGranterFactory;
@@ -52,26 +50,70 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
           leaseGranterFactory.apply(
               duplexConnection, reqLeaseManager, respLeaseManager, errConsumer);
       LeaseConnectionRef connectionRef =
-          new LeaseConnectionRef(leaseGranter, duplexConnection.onClose());
+          new LeaseConnectionRef(leaseGranter, onClose);
 
       leaseConsumer.accept(connectionRef);
 
       args = new Args(reqLeaseManager, respLeaseManager, leaseGranter.grantedLeasesReceiver());
     }
-    LeaseConnectionFactory connectionFactory = factories.getOrDefault(type, (conn, args) -> conn);
-    return connectionFactory.apply(duplexConnection, args);
+    List<LeaseConnectionFactory> connectionFactories = factories.getOrDefault(
+            type,
+            singletonList((conn, args) ->conn));
+    for (LeaseConnectionFactory factory : connectionFactories) {
+      duplexConnection = factory.apply(duplexConnection, args);
+    }
+    return duplexConnection;
+  }
+
+  public static LeaseInterceptor ofServer(
+      Consumer<Throwable> errCons,
+      Consumer<LeaseConnectionRef> leaseConsumer,
+      boolean leaseEnabled) {
+    String tag = Classifier.Server.name();
+    Context ctx = new Context();
+    return of(
+        errCons,
+        leaseConsumer,
+        LeaseGranter::ofServer,
+
+            singletonList((conn, args) -> new RequestOutboundConnection(tag, conn, ctx, args.getRequesterLeaseManager())),
+
+            singletonList((conn, args) -> new ServerLeaseSetupConnection(conn, ctx, leaseEnabled)),
+
+            asList((conn, args) -> new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager()),
+                    (conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())),
+
+            emptyList());
+  }
+
+  public static LeaseInterceptor ofClient(
+      Consumer<Throwable> errCons, Consumer<LeaseConnectionRef> leaseConsumer) {
+    Context ctx = new Context(true);
+    String tag = Classifier.Client.name();
+    return of(
+        errCons,
+        leaseConsumer,
+        LeaseGranter::ofClient,
+
+            singletonList((conn, args) -> new RequestOutboundConnection(tag,conn, ctx, args.getRequesterLeaseManager())),
+
+            emptyList(),
+
+            singletonList((conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())),
+
+            singletonList((conn, args) -> new RequestInboundConnection(tag,conn, ctx, args.getResponderLeaseManager())));
   }
 
   private static LeaseInterceptor of(
-      Consumer<Throwable> errCons,
-      Consumer<LeaseConnectionRef> leaseConsumer,
-      LeaseGranterFactory leaseGranterFactory,
-      LeaseConnectionFactory source,
-      LeaseConnectionFactory setup,
-      LeaseConnectionFactory client,
-      LeaseConnectionFactory server) {
+          Consumer<Throwable> errCons,
+          Consumer<LeaseConnectionRef> leaseConsumer,
+          LeaseGranterFactory leaseGranterFactory,
+          List<LeaseConnectionFactory> source,
+          List<LeaseConnectionFactory> setup,
+          List<LeaseConnectionFactory> client,
+          List<LeaseConnectionFactory> server) {
 
-    Map<Type, LeaseConnectionFactory> res = new HashMap<>();
+    Map<Type, List<LeaseConnectionFactory>> res = new HashMap<>();
     res.put(Type.SOURCE, source);
     res.put(Type.STREAM_ZERO, setup);
     res.put(Type.CLIENT, client);
@@ -80,45 +122,15 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
     return new LeaseInterceptor(leaseGranterFactory, res, leaseConsumer, errCons);
   }
 
-  public static LeaseInterceptor ofServer(
-      Consumer<Throwable> errCons,
-      Consumer<LeaseConnectionRef> leaseConsumer,
-      boolean leaseEnabled) {
-    String classifier = SERVER;
-    Context ctx = new Context();
-    return of(
-        errCons,
-        leaseConsumer,
-        LeaseGranter::ofServer,
-        (conn, args) -> new LeaseInConnection(classifier,conn, ctx, args.getLeaseConsumer()),
-        (conn, args) -> new ServerLeaseSetupConnection(conn, ctx, leaseEnabled),
-        (conn, args) -> new RequestInboundConnection(classifier,conn, ctx, args.getResponderLeaseManager()),
-        (conn, args) -> new RequestOutboundConnection(classifier,conn, ctx, args.getRequesterLeaseManager()));
-  }
-
-  public static LeaseInterceptor ofClient(
-      Consumer<Throwable> errCons, Consumer<LeaseConnectionRef> leaseConsumer) {
-    Context ctx = new Context(true);
-    String classifier = CLIENT;
-    return of(
-        errCons,
-        leaseConsumer,
-        LeaseGranter::ofClient,
-        (conn, args) -> new LeaseInConnection(classifier,conn, ctx, args.getLeaseConsumer()),
-        (conn, args) -> conn,
-        (conn, args) -> new RequestOutboundConnection(classifier,conn, ctx, args.getRequesterLeaseManager()),
-        (conn, args) -> new RequestInboundConnection(classifier,conn, ctx, args.getResponderLeaseManager()));
-  }
-
   abstract static class LeaseConnection extends DuplexConnectionProxy {
 
     private final Context context;
-    private final String classifier;
+    private final String tag;
 
-    public LeaseConnection(DuplexConnection source, Context context, String classifier) {
+    public LeaseConnection(DuplexConnection source, Context context, String tag) {
       super(source);
       this.context = context;
-      this.classifier = classifier;
+      this.tag = tag;
     }
 
     public void enableLease() {
@@ -129,8 +141,8 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
       return context.isLeaseEnabled();
     }
 
-    protected String getClassifier() {
-      return classifier;
+    protected String getTag() {
+      return tag;
     }
   }
 
@@ -175,11 +187,12 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
   abstract static class RequestConnection extends LeaseConnection {
     protected final LeaseManager leaseManager;
-    private static final Logger LOGGER = LoggerFactory.getLogger("io.rsocket.lease.RequestConnection");
-    public RequestConnection(String classifier,DuplexConnection source, Context context, LeaseManager leaseManager) {
-      super(source, context,classifier);
+    public RequestConnection(String tag,
+                             DuplexConnection source,
+                             Context context,
+                             LeaseManager leaseManager) {
+      super(source, context,tag);
       this.leaseManager = leaseManager;
-      LOGGER.info(String.format("Added %s for %s",getClass().getName(),getClassifier()));
     }
 
     @Override
@@ -197,7 +210,7 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
           leaseManager.useLease();
           return f;
         } else {
-          throw new NoLeaseException(lease,getClassifier());
+          throw new NoLeaseException(lease, getTag());
         }
       } else {
         return f;
@@ -208,11 +221,11 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
   static class RequestOutboundConnection extends RequestConnection {
 
     public RequestOutboundConnection(
-        String classifier,
+        String tag,
         DuplexConnection sourceConnection,
         Context context,
         LeaseManager requesterLeaseManager) {
-      super(classifier,sourceConnection, context, requesterLeaseManager);
+      super(tag,sourceConnection, context, requesterLeaseManager);
     }
 
     @Override
@@ -238,7 +251,10 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
   static class RequestInboundConnection extends RequestConnection {
     public RequestInboundConnection(
-        String classifier, DuplexConnection peerConnection, Context context, LeaseManager responderLeaseManager) {
+        String classifier,
+        DuplexConnection peerConnection,
+        Context context,
+        LeaseManager responderLeaseManager) {
       super(classifier,peerConnection, context, responderLeaseManager);
     }
 
@@ -346,5 +362,9 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
   private static final Set<FrameType> requests =
       new HashSet<>(
-          Arrays.asList(REQUEST_CHANNEL, REQUEST_RESPONSE, REQUEST_STREAM, FIRE_AND_FORGET));
+          asList(REQUEST_CHANNEL, REQUEST_RESPONSE, REQUEST_STREAM, FIRE_AND_FORGET));
+
+  private enum Classifier {
+    Client, Server
+  }
 }

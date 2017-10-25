@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import static java.util.Collections.min;
 import static java.util.stream.Collectors.toList;
 
 public class PerConnectionInterceptor implements DuplexConnectionInterceptor{
@@ -28,7 +27,7 @@ public class PerConnectionInterceptor implements DuplexConnectionInterceptor{
     @Override
     public DuplexConnection apply(Type type, DuplexConnection duplexConnection) {
         if (type.equals(Type.SOURCE)) {
-            List<DuplexConnectionInterceptor> interceptors = materialize();
+            List<DuplexConnectionInterceptor> interceptors = create();
             duplexConnection = intercept(duplexConnection, Type.SOURCE, interceptors);
 
             ClientServerInputMultiplexer demux = new ClientServerInputMultiplexer(duplexConnection, empty);
@@ -37,32 +36,35 @@ public class PerConnectionInterceptor implements DuplexConnectionInterceptor{
             DuplexConnection client = intercept(demux.asClientConnection(), Type.CLIENT, interceptors);
             DuplexConnection server = intercept(demux.asServerConnection(), Type.SERVER, interceptors);
 
-            return new ConnectionMux(zero, client, server);
+            return new ConnectionMux(duplexConnection,zero, client, server);
         } else {
             return duplexConnection;
         }
     }
 
     static class ConnectionMux implements DuplexConnection{
-        private final List<DuplexConnection> conns;
+        private final DuplexConnection source;
+        private final List<DuplexConnection> demuxed;
 
-        public ConnectionMux(DuplexConnection...conns) {
-            this.conns = Arrays.asList(conns);
+        public ConnectionMux(DuplexConnection source,
+                             DuplexConnection...demuxed) {
+            this.source = source;
+            this.demuxed = Arrays.asList(demuxed);
         }
 
         @Override
         public Mono<Void> send(Publisher<Frame> frame) {
-            return conns.get(0).send(frame);
+            return source.send(frame);
         }
 
         @Override
         public Flux<Frame> receive() {
-            return Flux.merge(transform(conns, DuplexConnection::receive));
+            return Flux.merge(transform(demuxed, DuplexConnection::receive));
         }
 
         @Override
         public double availability() {
-            return min(transform(conns, DuplexConnection::availability));
+            return source.availability();
         }
 
         @Override
@@ -76,7 +78,7 @@ public class PerConnectionInterceptor implements DuplexConnectionInterceptor{
         }
 
         Mono<Void> whenCompleted(Function<DuplexConnection, Mono<Void>> mapper) {
-            return Flux.fromIterable(conns).flatMap(mapper).then();
+            return Flux.fromIterable(demuxed).flatMap(mapper).then();
         }
 
         static  <T> List<T> transform(List<DuplexConnection> col, Function<DuplexConnection, T> mapper) {
@@ -85,7 +87,7 @@ public class PerConnectionInterceptor implements DuplexConnectionInterceptor{
 
     }
 
-    List<DuplexConnectionInterceptor> materialize() {
+    List<DuplexConnectionInterceptor> create() {
         return interceptorsFactory
                 .stream()
                 .map(Supplier::get)
