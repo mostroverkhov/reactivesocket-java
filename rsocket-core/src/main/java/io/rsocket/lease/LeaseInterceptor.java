@@ -53,7 +53,9 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
       leaseConsumer.accept(connectionRef);
 
-      args = new Args(reqLeaseManager, respLeaseManager, leaseGranter.grantedLeasesReceiver());
+      args =
+          new Args(
+              reqLeaseManager, respLeaseManager, leaseGranter.grantedLeasesReceiver(), errConsumer);
     }
     List<LeaseConnectionFactory> connectionFactories =
         factories.getOrDefault(type, singletonList((conn, args) -> conn));
@@ -76,7 +78,9 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
         singletonList(
             (conn, args) ->
                 new RequestOutboundConnection(tag, conn, ctx, args.getRequesterLeaseManager())),
-        singletonList((conn, args) -> new ServerLeaseSetupConnection(conn, ctx, leaseEnabled)),
+        singletonList(
+            (conn, args) ->
+                new ServerLeaseSetupConnection(conn, ctx, leaseEnabled, args.getErrConsumer())),
         asList(
             (conn, args) ->
                 new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager()),
@@ -148,12 +152,17 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
   static class ServerLeaseSetupConnection extends LeaseConnection {
     private final UnicastProcessor<Frame> setupFrames = UnicastProcessor.create();
     private final boolean serverLeaseEnabled;
+    private final Consumer<Throwable> errConsumer;
     private volatile Disposable leaseErrorSubs = () -> {};
 
     public ServerLeaseSetupConnection(
-        DuplexConnection setupConnection, Context context, boolean serverLeaseEnabled) {
+        DuplexConnection setupConnection,
+        Context context,
+        boolean serverLeaseEnabled,
+        Consumer<Throwable> errConsumer) {
       super(setupConnection, context, "server");
       this.serverLeaseEnabled = serverLeaseEnabled;
+      this.errConsumer = errConsumer;
     }
 
     @Override
@@ -161,17 +170,23 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
       super.receive()
           .next()
           .subscribe(
-              f -> {
-                boolean clientLeaseEnabled = isSetup(f) && Frame.Setup.supportsLease(f);
+              frame -> {
+                boolean clientLeaseEnabled = isSetup(frame) && Frame.Setup.supportsLease(frame);
                 if (clientLeaseEnabled && !serverLeaseEnabled) {
                   UnsupportedSetupException error =
                       new UnsupportedSetupException("Server does not support lease");
-                  leaseErrorSubs = sendOne(Frame.Error.from(0, error)).then(close()).subscribe();
+                  leaseErrorSubs =
+                      sendOne(Frame.Error.from(0, error))
+                          .then(close())
+                          .doOnError(errConsumer)
+                          .onErrorResume(err -> Mono.empty())
+                          .subscribe();
+                } else {
+                  if (clientLeaseEnabled) {
+                    enableLease();
+                  }
+                  setupFrames.onNext(frame);
                 }
-                if (clientLeaseEnabled) {
-                  enableLease();
-                }
-                setupFrames.onNext(f);
               },
               setupFrames::onError);
 
@@ -330,14 +345,17 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
     private final LeaseManager requesterLeaseManager;
     private final LeaseManager responderLeaseManager;
     private final Consumer<Lease> leaseConsumer;
+    private Consumer<Throwable> errConsumer;
 
     public Args(
         LeaseManager requesterLeaseManager,
         LeaseManager responderLeaseManager,
-        Consumer<Lease> leaseConsumer) {
+        Consumer<Lease> leaseConsumer,
+        Consumer<Throwable> errConsumer) {
       this.requesterLeaseManager = requesterLeaseManager;
       this.responderLeaseManager = responderLeaseManager;
       this.leaseConsumer = leaseConsumer;
+      this.errConsumer = errConsumer;
     }
 
     public Consumer<Lease> getLeaseConsumer() {
@@ -350,6 +368,10 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
     public LeaseManager getResponderLeaseManager() {
       return responderLeaseManager;
+    }
+
+    public Consumer<Throwable> getErrConsumer() {
+      return errConsumer;
     }
   }
 
