@@ -31,7 +31,6 @@ import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
 import io.rsocket.util.PayloadImpl;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -124,7 +123,7 @@ public class RSocketFactory {
           MimeType<ClientRSocketFactory>,
           Fragmentation<ClientRSocketFactory>,
           ErrorConsumer<ClientRSocketFactory>,
-          SetupPayload<ClientRSocketFactory>{
+          SetupPayload<ClientRSocketFactory> {
 
     protected Supplier<Function<RSocket, RSocket>> acceptor =
         () -> rSocket -> new AbstractRSocket() {};
@@ -302,8 +301,7 @@ public class RSocketFactory {
   public static class ServerRSocketFactory
       implements Acceptor<ServerTransportAcceptor, SocketAcceptor>,
           Fragmentation<ServerRSocketFactory>,
-          ErrorConsumer<ServerRSocketFactory>
-           {
+          ErrorConsumer<ServerRSocketFactory> {
 
     protected Supplier<SocketAcceptor> acceptor;
     protected Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
