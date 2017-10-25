@@ -23,7 +23,7 @@ public class LeaseClientServeReqRep {
 
     LeaseControlSource serverLeaseControl = new LeaseControlSource();
     NettyContextCloseable nettyContextCloseable =
-        RSocketFactory.receive()
+        CoolRSocketFactory.receive()
             .enableLease(serverLeaseControl)
             .acceptor(
                 (setup, reactiveSocket) ->
@@ -40,7 +40,7 @@ public class LeaseClientServeReqRep {
 
     LeaseControlSource clientLeaseControl = new LeaseControlSource();
     RSocket clientSocket =
-        RSocketFactory.connect()
+        CoolRSocketFactory.connect()
             .enableLease(clientLeaseControl)
             .transport(TcpClientTransport.create("localhost", 7000))
             .start()

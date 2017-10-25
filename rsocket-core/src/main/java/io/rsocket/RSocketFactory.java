@@ -117,12 +117,6 @@ public class RSocketFactory {
     T metadataMimeType(String metadataMimeType);
   }
 
-  public interface Leasing<T> {
-    T enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer);
-
-    T disableLease();
-  }
-
   public static class ClientRSocketFactory
       implements Acceptor<ClientTransportAcceptor, Function<RSocket, RSocket>>,
           ClientTransportAcceptor,
@@ -130,15 +124,14 @@ public class RSocketFactory {
           MimeType<ClientRSocketFactory>,
           Fragmentation<ClientRSocketFactory>,
           ErrorConsumer<ClientRSocketFactory>,
-          SetupPayload<ClientRSocketFactory>,
-          Leasing<ClientRSocketFactory> {
+          SetupPayload<ClientRSocketFactory>{
 
-    private Supplier<Function<RSocket, RSocket>> acceptor =
+    protected Supplier<Function<RSocket, RSocket>> acceptor =
         () -> rSocket -> new AbstractRSocket() {};
-    private Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
+    protected Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
     private int mtu = 0;
     private PluginRegistry plugins = new PluginRegistry(Plugins.defaultPlugins());
-    private int flags = SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION;
+    protected int flags = SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION;
 
     private Payload setupPayload = PayloadImpl.EMPTY;
 
@@ -148,7 +141,6 @@ public class RSocketFactory {
 
     private String metadataMimeType = "application/binary";
     private String dataMimeType = "application/binary";
-    private Optional<Consumer<LeaseConnectionRef>> leaseConsumer = Optional.empty();
 
     public ClientRSocketFactory addConnectionPlugin(DuplexConnectionInterceptor interceptor) {
       plugins.addConnectionPlugin(interceptor);
@@ -246,29 +238,11 @@ public class RSocketFactory {
       return this;
     }
 
-    @Override
-    public ClientRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {
-      this.leaseConsumer = Optional.of(leaseControlConsumer);
-      flags |= SetupFrameFlyweight.FLAGS_WILL_HONOR_LEASE;
-      return this;
-    }
-
-    @Override
-    public ClientRSocketFactory disableLease() {
-      this.leaseConsumer = Optional.empty();
-      flags &= ~SetupFrameFlyweight.FLAGS_WILL_HONOR_LEASE;
-      return this;
-    }
-
     protected class StartClient implements Start<RSocket> {
       private final Supplier<ClientTransport> transportClient;
 
       StartClient(Supplier<ClientTransport> transportClient) {
         this.transportClient = transportClient;
-        leaseConsumer.ifPresent(
-            leaseConsumer ->
-                addConnectionPlugin(new PerConnectionInterceptor(
-                        () -> LeaseInterceptor.ofClient(errorConsumer, leaseConsumer))));
       }
 
       @Override
@@ -328,16 +302,15 @@ public class RSocketFactory {
   public static class ServerRSocketFactory
       implements Acceptor<ServerTransportAcceptor, SocketAcceptor>,
           Fragmentation<ServerRSocketFactory>,
-          ErrorConsumer<ServerRSocketFactory>,
-          Leasing<ServerRSocketFactory> {
+          ErrorConsumer<ServerRSocketFactory>
+           {
 
-    private Supplier<SocketAcceptor> acceptor;
-    private Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
+    protected Supplier<SocketAcceptor> acceptor;
+    protected Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
     private int mtu = 0;
     private PluginRegistry plugins = new PluginRegistry(Plugins.defaultPlugins());
-    private Optional<Consumer<LeaseConnectionRef>> leaseControlConsumer = Optional.empty();
 
-    private ServerRSocketFactory() {}
+    protected ServerRSocketFactory() {}
 
     public ServerRSocketFactory addConnectionPlugin(DuplexConnectionInterceptor interceptor) {
       plugins.addConnectionPlugin(interceptor);
@@ -372,32 +345,11 @@ public class RSocketFactory {
       return this;
     }
 
-    @Override
-    public ServerRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {
-      this.leaseControlConsumer = Optional.of(leaseControlConsumer);
-      return this;
-    }
-
-    @Override
-    public ServerRSocketFactory disableLease() {
-      this.leaseControlConsumer = Optional.empty();
-      return this;
-    }
-
-    private class ServerStart<T extends Closeable> implements Start<T> {
+    protected class ServerStart<T extends Closeable> implements Start<T> {
       private final Supplier<ServerTransport<T>> transportServer;
 
       ServerStart(Supplier<ServerTransport<T>> transportServer) {
         this.transportServer = transportServer;
-
-        if (leaseControlConsumer.isPresent()) {
-          addConnectionPlugin(
-              new PerConnectionInterceptor(() -> LeaseInterceptor.ofServer(errorConsumer, leaseControlConsumer.get(), true)));
-        } else {
-          addConnectionPlugin(
-                  new PerConnectionInterceptor(() ->
-                  LeaseInterceptor.ofServer(errorConsumer, connRef -> {}, false)));
-        }
       }
 
       @Override
