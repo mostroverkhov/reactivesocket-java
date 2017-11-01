@@ -1,3 +1,5 @@
+#### Forked project with a goal to add missing and important rsocket protocol features. Effort will be made to implement them as plugins to share with [rsocket-java-backport](https://github.com/mostroverkhov/rsocket-java-backport) and simplify upstream merges
+
 # RSocket
 
 [![Join the chat at https://gitter.im/RSocket/reactivesocket-java](https://badges.gitter.im/RSocket/reactivesocket-java.svg)](https://gitter.im/RSocket/reactivesocket-java?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
