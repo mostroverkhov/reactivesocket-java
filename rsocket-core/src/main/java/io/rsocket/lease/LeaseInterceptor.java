@@ -69,7 +69,7 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
       Consumer<Throwable> errCons,
       Consumer<LeaseConnectionRef> leaseConsumer,
       boolean leaseEnabled) {
-    String tag = Classifier.Server.name();
+    String tag = Tag.Server.name();
     Context ctx = new Context();
     return of(
         errCons,
@@ -81,17 +81,17 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
         singletonList(
             (conn, args) ->
                 new ServerLeaseSetupConnection(conn, ctx, leaseEnabled, args.getErrConsumer())),
-        asList(
+        singletonList(
             (conn, args) ->
-                new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager()),
-            (conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())),
-        emptyList());
+                new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager())),
+        emptyList(),
+        singletonList((conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())));
   }
 
   public static LeaseInterceptor ofClient(
       Consumer<Throwable> errCons, Consumer<LeaseConnectionRef> leaseConsumer) {
     Context ctx = new Context(true);
-    String tag = Classifier.Client.name();
+    String tag = Tag.Client.name();
     return of(
         errCons,
         leaseConsumer,
@@ -100,11 +100,12 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
             (conn, args) ->
                 new RequestOutboundConnection(tag, conn, ctx, args.getRequesterLeaseManager())),
         emptyList(),
-        singletonList(
-            (conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())),
+        emptyList(),
         singletonList(
             (conn, args) ->
-                new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager())));
+                new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager())),
+        singletonList(
+            (conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())));
   }
 
   private static LeaseInterceptor of(
@@ -114,13 +115,15 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
       List<LeaseConnectionFactory> source,
       List<LeaseConnectionFactory> setup,
       List<LeaseConnectionFactory> client,
-      List<LeaseConnectionFactory> server) {
+      List<LeaseConnectionFactory> server,
+      List<LeaseConnectionFactory> zero) {
 
     Map<Type, List<LeaseConnectionFactory>> res = new HashMap<>();
     res.put(Type.SOURCE, source);
-    res.put(Type.STREAM_ZERO, setup);
+    res.put(Type.INIT, setup);
     res.put(Type.CLIENT, client);
     res.put(Type.SERVER, server);
+    res.put(Type.STREAM_ZERO, zero);
 
     return new LeaseInterceptor(leaseGranterFactory, res, leaseConsumer, errCons);
   }
@@ -386,7 +389,7 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
   private static final Set<FrameType> requests =
       new HashSet<>(asList(REQUEST_CHANNEL, REQUEST_RESPONSE, REQUEST_STREAM, FIRE_AND_FORGET));
 
-  private enum Classifier {
+  private enum Tag {
     Client,
     Server
   }
