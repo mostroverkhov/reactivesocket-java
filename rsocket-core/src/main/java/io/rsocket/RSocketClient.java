@@ -18,25 +18,20 @@ package io.rsocket;
 
 import static io.rsocket.util.ExceptionUtil.noStacktrace;
 
-import io.netty.buffer.Unpooled;
 import io.netty.util.collection.IntObjectHashMap;
-import io.rsocket.exceptions.ConnectionException;
 import io.rsocket.exceptions.Exceptions;
 import io.rsocket.internal.LimitableRequestPublisher;
 import io.rsocket.internal.UnboundedProcessor;
 import io.rsocket.util.PayloadImpl;
 import java.nio.channels.ClosedChannelException;
-import java.time.Duration;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import javax.annotation.Nullable;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
-import reactor.core.Disposable;
 import reactor.core.publisher.*;
 
 /** Client Side of a RSocket socket. Sends {@link Frame}s to a {@link RSocketServer} */
@@ -51,53 +46,21 @@ class RSocketClient implements RSocket {
   private final MonoProcessor<Void> started;
   private final IntObjectHashMap<LimitableRequestPublisher> senders;
   private final IntObjectHashMap<Subscriber<Payload>> receivers;
-  private final AtomicInteger missedAckCounter;
-
   private final UnboundedProcessor<Frame> sendProcessor;
-
-  private @Nullable Disposable keepAliveSendSub;
-  private volatile long timeLastTickSentMs;
 
   RSocketClient(
       DuplexConnection connection,
       Consumer<Throwable> errorConsumer,
       StreamIdSupplier streamIdSupplier) {
-    this(connection, errorConsumer, streamIdSupplier, Duration.ZERO, Duration.ZERO, 0);
-  }
-
-  RSocketClient(
-      DuplexConnection connection,
-      Consumer<Throwable> errorConsumer,
-      StreamIdSupplier streamIdSupplier,
-      Duration tickPeriod,
-      Duration ackTimeout,
-      int missedAcks) {
     this.connection = connection;
     this.errorConsumer = errorConsumer;
     this.streamIdSupplier = streamIdSupplier;
     this.started = MonoProcessor.create();
     this.senders = new IntObjectHashMap<>(256, 0.9f);
     this.receivers = new IntObjectHashMap<>(256, 0.9f);
-    this.missedAckCounter = new AtomicInteger();
 
     // DO NOT Change the order here. The Send processor must be subscribed to before receiving
     this.sendProcessor = new UnboundedProcessor<>();
-
-    if (!Duration.ZERO.equals(tickPeriod)) {
-      long ackTimeoutMs = ackTimeout.toMillis();
-
-      this.keepAliveSendSub =
-          started
-              .thenMany(Flux.interval(tickPeriod))
-              .doOnSubscribe(s -> timeLastTickSentMs = System.currentTimeMillis())
-              .concatMap(i -> sendKeepAlive(ackTimeoutMs, missedAcks))
-              .doOnError(
-                  t -> {
-                    errorConsumer.accept(t);
-                    connection.close().subscribe();
-                  })
-              .subscribe();
-    }
 
     connection
         .onClose()
@@ -165,25 +128,6 @@ class RSocketClient implements RSocket {
     for (LimitableRequestPublisher p : values1) {
       p.cancel();
     }
-  }
-
-  private Mono<Void> sendKeepAlive(long ackTimeoutMs, int missedAcks) {
-    return Mono.fromRunnable(
-        () -> {
-          long now = System.currentTimeMillis();
-          if (now - timeLastTickSentMs > ackTimeoutMs) {
-            int count = missedAckCounter.incrementAndGet();
-            if (count >= missedAcks) {
-              String message =
-                  String.format(
-                      "Missed %d keep-alive acks with a threshold of %d and a ack timeout of %d ms",
-                      count, missedAcks, ackTimeoutMs);
-              throw new ConnectionException(message);
-            }
-          }
-
-          sendProcessor.onNext(Frame.Keepalive.from(Unpooled.EMPTY_BUFFER, true));
-        });
   }
 
   @Override
@@ -432,10 +376,6 @@ class RSocketClient implements RSocket {
 
     subscribers.forEach(this::cleanUpSubscriber);
     publishers.forEach(this::cleanUpLimitableRequestPublisher);
-
-    if (null != keepAliveSendSub) {
-      keepAliveSendSub.dispose();
-    }
   }
 
   private synchronized void cleanUpLimitableRequestPublisher(
@@ -476,9 +416,6 @@ class RSocketClient implements RSocket {
       case LEASE:
         break;
       case KEEPALIVE:
-        if (!Frame.Keepalive.hasRespondFlag(frame)) {
-          timeLastTickSentMs = System.currentTimeMillis();
-        }
         break;
       default:
         // Ignore unknown frames. Throwing an error will close the socket.

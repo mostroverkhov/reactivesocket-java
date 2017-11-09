@@ -2,12 +2,11 @@ package io.rsocket.internal;
 
 import static java.util.stream.Collectors.toList;
 
+import io.rsocket.DuplexConnection;
+import io.rsocket.Frame;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
-
-import io.rsocket.DuplexConnection;
-import io.rsocket.Frame;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

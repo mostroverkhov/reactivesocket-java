@@ -85,7 +85,8 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
             (conn, args) ->
                 new RequestInboundConnection(tag, conn, ctx, args.getResponderLeaseManager())),
         emptyList(),
-        singletonList((conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())));
+        singletonList(
+            (conn, args) -> new LeaseInConnection(tag, conn, ctx, args.getLeaseConsumer())));
   }
 
   public static LeaseInterceptor ofClient(
