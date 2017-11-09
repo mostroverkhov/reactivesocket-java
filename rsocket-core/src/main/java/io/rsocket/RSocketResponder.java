@@ -37,8 +37,8 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.publisher.UnicastProcessor;
 
-/** Server side RSocket. Receives {@link Frame}s from a {@link RSocketClient} */
-class RSocketServer implements RSocket {
+/** Responder side RSocket. Receives {@link Frame}s from a {@link RSocketRequester} */
+class RSocketResponder implements RSocket {
 
   private final DuplexConnection connection;
   private final RSocket requestHandler;
@@ -50,7 +50,7 @@ class RSocketServer implements RSocket {
   private final UnboundedProcessor<Frame> sendProcessor;
   private Disposable receiveDisposable;
 
-  RSocketServer(
+  RSocketResponder(
       DuplexConnection connection, RSocket requestHandler, Consumer<Throwable> errorConsumer) {
     this.connection = connection;
     this.requestHandler = requestHandler;
@@ -90,7 +90,7 @@ class RSocketServer implements RSocket {
   private void handleSendProcessorError(Throwable t) {
     Collection<Subscription> values;
     Collection<UnicastProcessor<Payload>> values1;
-    synchronized (RSocketServer.this) {
+    synchronized (RSocketResponder.this) {
       values = sendingSubscriptions.values();
       values1 = channelProcessors.values();
     }
@@ -118,7 +118,7 @@ class RSocketServer implements RSocket {
     }
     Collection<Subscription> values;
     Collection<UnicastProcessor<Payload>> values1;
-    synchronized (RSocketServer.this) {
+    synchronized (RSocketResponder.this) {
       values = sendingSubscriptions.values();
       values1 = channelProcessors.values();
     }
@@ -315,7 +315,7 @@ class RSocketServer implements RSocket {
         .transform(
             frameFlux -> {
               LimitableRequestPublisher<Frame> frames = LimitableRequestPublisher.wrap(frameFlux);
-              synchronized (RSocketServer.this) {
+              synchronized (RSocketResponder.this) {
                 sendingSubscriptions.put(streamId, frames);
               }
               frames.increaseRequestLimit(initialRequestN);

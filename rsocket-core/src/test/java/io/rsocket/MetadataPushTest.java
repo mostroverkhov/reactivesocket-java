@@ -34,8 +34,8 @@ public class MetadataPushTest {
 
     String metadata = "metadata";
     MonoProcessor<Void> completeSignal = MonoProcessor.create();
-    RSocketServer responder =
-        new RSocketServer(
+    RSocketResponder responder =
+        new RSocketResponder(
             conn,
             new AbstractRSocket() {
               @Override

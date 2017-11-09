@@ -34,8 +34,8 @@ import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import reactor.core.publisher.*;
 
-/** Client Side of a RSocket socket. Sends {@link Frame}s to a {@link RSocketServer} */
-class RSocketClient implements RSocket {
+/** Client Side of a RSocket socket. Sends {@link Frame}s to a {@link RSocketResponder} */
+class RSocketRequester implements RSocket {
 
   private static final ClosedChannelException CLOSED_CHANNEL_EXCEPTION =
       noStacktrace(new ClosedChannelException());
@@ -48,7 +48,7 @@ class RSocketClient implements RSocket {
   private final IntObjectHashMap<Subscriber<Payload>> receivers;
   private final UnboundedProcessor<Frame> sendProcessor;
 
-  RSocketClient(
+  RSocketRequester(
       DuplexConnection connection,
       Consumer<Throwable> errorConsumer,
       StreamIdSupplier streamIdSupplier) {
@@ -88,7 +88,7 @@ class RSocketClient implements RSocket {
   private void handleSendProcessorError(Throwable t) {
     Collection<Subscriber<Payload>> values;
     Collection<LimitableRequestPublisher> values1;
-    synchronized (RSocketClient.this) {
+    synchronized (RSocketRequester.this) {
       values = receivers.values();
       values1 = senders.values();
     }
@@ -112,7 +112,7 @@ class RSocketClient implements RSocket {
     }
     Collection<Subscriber<Payload>> values;
     Collection<LimitableRequestPublisher> values1;
-    synchronized (RSocketClient.this) {
+    synchronized (RSocketRequester.this) {
       values = receivers.values();
       values1 = senders.values();
     }
@@ -278,7 +278,7 @@ class RSocketClient implements RSocket {
                     .doOnRequest(
                         l -> {
                           boolean _firstRequest = false;
-                          synchronized (RSocketClient.this) {
+                          synchronized (RSocketRequester.this) {
                             if (firstRequest) {
                               _firstRequest = true;
                               firstRequest = false;
@@ -295,7 +295,7 @@ class RSocketClient implements RSocket {
                                               LimitableRequestPublisher.wrap(f);
                                           // Need to set this to one for first the frame
                                           wrapped.increaseRequestLimit(1);
-                                          synchronized (RSocketClient.this) {
+                                          synchronized (RSocketRequester.this) {
                                             senders.put(streamId, wrapped);
                                             receivers.put(streamId, receiver);
                                           }
@@ -358,7 +358,7 @@ class RSocketClient implements RSocket {
   }
 
   private boolean contains(int streamId) {
-    synchronized (RSocketClient.this) {
+    synchronized (RSocketRequester.this) {
       return receivers.containsKey(streamId);
     }
   }
@@ -366,7 +366,7 @@ class RSocketClient implements RSocket {
   protected void cleanup() {
     Collection<Subscriber<Payload>> subscribers;
     Collection<LimitableRequestPublisher> publishers;
-    synchronized (RSocketClient.this) {
+    synchronized (RSocketRequester.this) {
       subscribers = receivers.values();
       publishers = senders.values();
 

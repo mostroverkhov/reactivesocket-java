@@ -271,14 +271,14 @@ public class RSocketFactory {
                   }
                   ConnectionDemux multiplexer = new ConnectionDemux(connection, plugins);
 
-                  RSocketClient rSocketClient =
-                      new RSocketClient(
+                  RSocketRequester rSocketRequester =
+                      new RSocketRequester(
                           multiplexer.asClientConnection(),
                           errorConsumer,
                           StreamIdSupplier.clientSupplier());
 
                   Mono<RSocket> wrappedRSocketClient =
-                      Mono.just(rSocketClient).map(plugins::applyClient);
+                      Mono.just(rSocketRequester).map(plugins::applyClient);
                   DuplexConnection finalConnection = connection;
 
                   return wrappedRSocketClient.flatMap(
@@ -290,7 +290,7 @@ public class RSocketFactory {
                         return wrappedRSocketServer
                             .doOnNext(
                                 rSocket ->
-                                    new RSocketServer(
+                                    new RSocketResponder(
                                         multiplexer.asZeroAndServerConnection(),
                                         rSocket,
                                         errorConsumer))
@@ -385,11 +385,11 @@ public class RSocketFactory {
           return setupError(multiplexer, error);
         }
 
-        RSocketClient rSocketClient =
-            new RSocketClient(
+        RSocketRequester rSocketRequester =
+            new RSocketRequester(
                 multiplexer.asServerConnection(), errorConsumer, StreamIdSupplier.serverSupplier());
 
-        Mono<RSocket> wrappedRSocketClient = Mono.just(rSocketClient).map(plugins::applyClient);
+        Mono<RSocket> wrappedRSocketClient = Mono.just(rSocketRequester).map(plugins::applyClient);
 
         ConnectionSetupPayload setupPayload = ConnectionSetupPayload.create(setupFrame);
 
@@ -398,7 +398,7 @@ public class RSocketFactory {
                 sender -> acceptor.get().accept(setupPayload, sender).map(plugins::applyServer))
             .map(
                 handler ->
-                    new RSocketServer(
+                    new RSocketResponder(
                         multiplexer.asZeroAndClientConnection(), handler, errorConsumer))
             .then();
       }

@@ -101,7 +101,7 @@ public class RSocketResponderTest {
     assertThat("Subscription not cancelled.", cancelled.get(), is(true));
   }
 
-  public static class ServerSocketRule extends AbstractSocketRule<RSocketServer> {
+  public static class ServerSocketRule extends AbstractSocketRule<RSocketResponder> {
 
     private RSocket acceptingSocket;
 
@@ -126,8 +126,8 @@ public class RSocketResponderTest {
     }
 
     @Override
-    protected RSocketServer newRSocket() {
-      return new RSocketServer(connection, acceptingSocket, throwable -> errors.add(throwable));
+    protected RSocketResponder newRSocket() {
+      return new RSocketResponder(connection, acceptingSocket, throwable -> errors.add(throwable));
     }
 
     private void sendRequest(int streamId, FrameType frameType) {
