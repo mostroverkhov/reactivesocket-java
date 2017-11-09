@@ -20,8 +20,6 @@ import static io.rsocket.Frame.Request.initialRequestN;
 import static io.rsocket.frame.FrameHeaderFlyweight.FLAGS_C;
 import static io.rsocket.frame.FrameHeaderFlyweight.FLAGS_M;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.util.collection.IntObjectHashMap;
 import io.rsocket.exceptions.ApplicationException;
 import io.rsocket.internal.LimitableRequestPublisher;
@@ -225,8 +223,6 @@ class RSocketServer implements RSocket {
           return handleRequestResponse(streamId, requestResponse(new PayloadImpl(frame)));
         case CANCEL:
           return handleCancelFrame(streamId);
-        case KEEPALIVE:
-          return handleKeepAliveFrame(frame);
         case REQUEST_N:
           return handleRequestN(streamId, frame);
         case REQUEST_STREAM:
@@ -360,16 +356,6 @@ class RSocketServer implements RSocket {
     frames.onNext(new PayloadImpl(firstFrame));
 
     return handleStream(streamId, requestChannel(payloads), initialRequestN(firstFrame));
-  }
-
-  private Mono<Void> handleKeepAliveFrame(Frame frame) {
-    return Mono.fromRunnable(
-        () -> {
-          if (Frame.Keepalive.hasRespondFlag(frame)) {
-            ByteBuf data = Unpooled.wrappedBuffer(frame.getData());
-            sendProcessor.onNext(Frame.Keepalive.from(data, false));
-          }
-        });
   }
 
   private Mono<Void> handleCancelFrame(int streamId) {

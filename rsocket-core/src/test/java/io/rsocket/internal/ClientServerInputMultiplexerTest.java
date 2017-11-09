@@ -22,11 +22,9 @@ import io.rsocket.Frame;
 import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.plugins.PluginRegistry;
 import io.rsocket.test.util.TestDuplexConnection;
-
+import io.rsocket.util.PayloadImpl;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import io.rsocket.util.PayloadImpl;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -63,10 +61,10 @@ public class ClientServerInputMultiplexerTest {
         .doOnNext(f -> connectionFrames.incrementAndGet())
         .subscribe();
     multiplexer
-            .asInitConnection()
-            .receive()
-            .doOnNext(f -> initFrames.incrementAndGet())
-            .subscribe();
+        .asInitConnection()
+        .receive()
+        .doOnNext(f -> initFrames.incrementAndGet())
+        .subscribe();
 
     source.addToReceivedBuffer(Frame.Error.from(1, new Exception()));
     assertEquals(1, clientFrames.get());
@@ -102,13 +100,13 @@ public class ClientServerInputMultiplexerTest {
   private Frame setupFrame() {
     int duration = (int) Duration.ZERO.toMillis();
     Frame setupFrame =
-            Frame.Setup.from(
-                    SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION,
-                    duration,
-                     duration,
-                    "application/binary",
-                    "application/binary",
-                    PayloadImpl.EMPTY);
+        Frame.Setup.from(
+            SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION,
+            duration,
+            duration,
+            "application/binary",
+            "application/binary",
+            PayloadImpl.EMPTY);
     return setupFrame;
   }
 }

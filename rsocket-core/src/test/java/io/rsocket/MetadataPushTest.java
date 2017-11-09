@@ -24,8 +24,7 @@ public class MetadataPushTest {
   }
 
   private void testResponderMetadataPush(
-      String connName, Function<ConnectionDemux, DuplexConnection> connF)
-      throws Exception {
+      String connName, Function<ConnectionDemux, DuplexConnection> connF) throws Exception {
     DirectProcessor<Frame> sender = DirectProcessor.create();
     DirectProcessor<Frame> receiver = DirectProcessor.create();
     DuplexConnection conn =

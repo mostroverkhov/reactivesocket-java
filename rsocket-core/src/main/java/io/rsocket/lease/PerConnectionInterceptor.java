@@ -2,9 +2,9 @@ package io.rsocket.lease;
 
 import static java.util.stream.Collectors.toList;
 
-import io.rsocket.internal.ConnectionMux;
 import io.rsocket.DuplexConnection;
 import io.rsocket.internal.ConnectionDemux;
+import io.rsocket.internal.ConnectionMux;
 import io.rsocket.plugins.DuplexConnectionInterceptor;
 import io.rsocket.plugins.PluginRegistry;
 import java.util.Arrays;
@@ -25,10 +25,8 @@ public class PerConnectionInterceptor implements DuplexConnectionInterceptor {
       List<DuplexConnectionInterceptor> interceptors = create();
       duplexConnection = intercept(duplexConnection, Type.SOURCE, interceptors);
 
-      ConnectionDemux demux =
-          new ConnectionDemux(duplexConnection, empty);
-      DuplexConnection init =
-              intercept(demux.asInitConnection(), Type.INIT, interceptors);
+      ConnectionDemux demux = new ConnectionDemux(duplexConnection, empty);
+      DuplexConnection init = intercept(demux.asInitConnection(), Type.INIT, interceptors);
       DuplexConnection zero =
           intercept(demux.asStreamZeroConnection(), Type.STREAM_ZERO, interceptors);
       DuplexConnection client = intercept(demux.asClientConnection(), Type.CLIENT, interceptors);

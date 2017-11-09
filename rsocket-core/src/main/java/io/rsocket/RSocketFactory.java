@@ -16,19 +16,23 @@
 
 package io.rsocket;
 
+import static io.rsocket.plugins.DuplexConnectionInterceptor.Type.*;
+
 import io.rsocket.exceptions.InvalidSetupException;
 import io.rsocket.exceptions.SetupException;
 import io.rsocket.fragmentation.FragmentationDuplexConnection;
 import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
 import io.rsocket.internal.ConnectionDemux;
-import io.rsocket.plugins.DuplexConnectionInterceptor;
-import io.rsocket.plugins.PluginRegistry;
-import io.rsocket.plugins.Plugins;
-import io.rsocket.plugins.RSocketInterceptor;
+import io.rsocket.keepalive.CloseOnKeepAliveTimeout;
+import io.rsocket.keepalive.KeepAliveRequesterConnection;
+import io.rsocket.keepalive.KeepAliveResponderConnection;
+import io.rsocket.keepalive.KeepAlives;
+import io.rsocket.plugins.*;
 import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
 import io.rsocket.util.PayloadImpl;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -96,15 +100,16 @@ public class RSocketFactory {
   }
 
   public interface KeepAlive<T> {
-    T keepAlive();
 
-    T keepAlive(Duration tickPeriod, Duration ackTimeout, int missedAcks);
+    T keepAlive(
+        Duration period,
+        int periodsTimeout,
+        Supplier<ByteBuffer> frameDataSupplier,
+        Consumer<KeepAlives> consumer);
 
-    T keepAliveTickPeriod(Duration tickPeriod);
-
-    T keepAliveAckTimeout(Duration ackTimeout);
-
-    T keepAliveMissedAcks(int missedAcks);
+    default T keepAlive(Duration period, int periodsTimeout, Consumer<KeepAlives> consumer) {
+      return keepAlive(period, periodsTimeout, () -> Frame.NULL_BYTEBUFFER, consumer);
+    }
   }
 
   public interface MimeType<T> {
@@ -133,9 +138,10 @@ public class RSocketFactory {
 
     private Payload setupPayload = PayloadImpl.EMPTY;
 
-    private Duration tickPeriod = Duration.ZERO;
-    private Duration ackTimeout = Duration.ofSeconds(30);
-    private int missedAcks = 3;
+    private Duration keepAlivePeriod = Duration.ofMillis(500);
+    private int keepAlivePeriodsTimeout = 3;
+    private Supplier<ByteBuffer> frameDataFactory = () -> Frame.NULL_BYTEBUFFER;
+    private Consumer<KeepAlives> keepAlivesConsumer = new CloseOnKeepAliveTimeout(errorConsumer);
 
     private String metadataMimeType = "application/binary";
     private String dataMimeType = "application/binary";
@@ -156,35 +162,15 @@ public class RSocketFactory {
     }
 
     @Override
-    public ClientRSocketFactory keepAlive() {
-      tickPeriod = Duration.ofSeconds(20);
-      return this;
-    }
-
-    @Override
     public ClientRSocketFactory keepAlive(
-        Duration tickPeriod, Duration ackTimeout, int missedAcks) {
-      this.tickPeriod = tickPeriod;
-      this.ackTimeout = ackTimeout;
-      this.missedAcks = missedAcks;
-      return this;
-    }
-
-    @Override
-    public ClientRSocketFactory keepAliveTickPeriod(Duration tickPeriod) {
-      this.tickPeriod = tickPeriod;
-      return this;
-    }
-
-    @Override
-    public ClientRSocketFactory keepAliveAckTimeout(Duration ackTimeout) {
-      this.ackTimeout = ackTimeout;
-      return this;
-    }
-
-    @Override
-    public ClientRSocketFactory keepAliveMissedAcks(int missedAcks) {
-      this.missedAcks = missedAcks;
+        Duration keepAlivePeriod,
+        int keepAlivePeriodsTimeout,
+        Supplier<ByteBuffer> frameDataFactory,
+        Consumer<KeepAlives> keepAlivesConsumer) {
+      this.keepAlivePeriod = keepAlivePeriod;
+      this.keepAlivePeriodsTimeout = keepAlivePeriodsTimeout;
+      this.frameDataFactory = frameDataFactory;
+      this.keepAlivesConsumer = keepAlivesConsumer;
       return this;
     }
 
@@ -241,6 +227,27 @@ public class RSocketFactory {
 
       StartClient(Supplier<ClientTransport> transportClient) {
         this.transportClient = transportClient;
+
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
+
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(
+                STREAM_ZERO,
+                conn -> {
+                  KeepAliveRequesterConnection keepAliveRequesterConnection =
+                      new KeepAliveRequesterConnection(
+                          conn,
+                          keepAlivePeriod,
+                          keepAlivePeriodsTimeout,
+                          frameDataFactory,
+                          errorConsumer);
+                  keepAlivesConsumer.accept(
+                      new KeepAlives(
+                          keepAliveRequesterConnection.keepAlive(),
+                          keepAliveRequesterConnection.close()));
+                  return keepAliveRequesterConnection;
+                }));
       }
 
       @Override
@@ -253,8 +260,8 @@ public class RSocketFactory {
                   Frame setupFrame =
                       Frame.Setup.from(
                           flags,
-                          (int) ackTimeout.toMillis(),
-                          (int) ackTimeout.toMillis() * missedAcks,
+                          keepAlivePeriodsTimeout,
+                          (int) keepAlivePeriod.toMillis() * keepAlivePeriodsTimeout,
                           metadataMimeType,
                           dataMimeType,
                           setupPayload);
@@ -262,17 +269,13 @@ public class RSocketFactory {
                   if (mtu > 0) {
                     connection = new FragmentationDuplexConnection(connection, mtu);
                   }
-                  ConnectionDemux multiplexer =
-                      new ConnectionDemux(connection, plugins);
+                  ConnectionDemux multiplexer = new ConnectionDemux(connection, plugins);
 
                   RSocketClient rSocketClient =
                       new RSocketClient(
                           multiplexer.asClientConnection(),
                           errorConsumer,
-                          StreamIdSupplier.clientSupplier(),
-                          tickPeriod,
-                          ackTimeout,
-                          missedAcks);
+                          StreamIdSupplier.clientSupplier());
 
                   Mono<RSocket> wrappedRSocketClient =
                       Mono.just(rSocketClient).map(plugins::applyClient);
@@ -349,6 +352,9 @@ public class RSocketFactory {
 
       ServerStart(Supplier<ServerTransport<T>> transportServer) {
         this.transportServer = transportServer;
+
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
       }
 
       @Override
@@ -360,8 +366,7 @@ public class RSocketFactory {
                   if (mtu > 0) {
                     connection = new FragmentationDuplexConnection(connection, mtu);
                   }
-                  ConnectionDemux multiplexer =
-                      new ConnectionDemux(connection, plugins);
+                  ConnectionDemux multiplexer = new ConnectionDemux(connection, plugins);
 
                   return multiplexer
                       .asInitConnection()
@@ -371,8 +376,7 @@ public class RSocketFactory {
                 });
       }
 
-      private Mono<Void> processSetupFrame(
-              ConnectionDemux multiplexer, Frame setupFrame) {
+      private Mono<Void> processSetupFrame(ConnectionDemux multiplexer, Frame setupFrame) {
         int version = Frame.Setup.version(setupFrame);
         if (version != SetupFrameFlyweight.CURRENT_VERSION) {
           InvalidSetupException error =
