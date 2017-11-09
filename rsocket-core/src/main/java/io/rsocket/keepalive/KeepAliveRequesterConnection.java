@@ -10,16 +10,24 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import io.rsocket.keepalive.KeepAlive.KeepAliveAvailable;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxProcessor;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.UnicastProcessor;
 
+import static io.rsocket.keepalive.KeepAlive.*;
+
 public class KeepAliveRequesterConnection extends DuplexConnectionProxy {
 
-  private final FluxProcessor<KeepAlive, KeepAlive> keepAlives =
-      UnicastProcessor.<KeepAlive>create().serialize();
+  private final FluxProcessor<KeepAliveAvailable, KeepAliveAvailable> keepAliveAvailable =
+      UnicastProcessor.<KeepAliveAvailable>create().serialize();
+
+  private final FluxProcessor<KeepAliveMissing, KeepAliveMissing> keepAliveMissing =
+          UnicastProcessor.<KeepAliveMissing>create().serialize();
+
   private final Duration tickPeriod;
   private final int timeoutTicks;
   private final Supplier<ByteBuffer> frameDataFactory;
@@ -54,13 +62,17 @@ public class KeepAliveRequesterConnection extends DuplexConnectionProxy {
   private void handleKeepAliveResponse(Frame f) {
     if (isKeepAliveResponse(f)) {
       missedAckCounter.set(0);
-      keepAlives.onNext(new KeepAlive.KeepAliveAvailable(f.getData()));
+      keepAliveAvailable.onNext(new KeepAliveAvailable(f.getData()));
       timeLastTickSentMs = System.currentTimeMillis();
     }
   }
 
-  public Flux<KeepAlive> keepAlive() {
-    return keepAlives;
+  public Flux<KeepAliveAvailable> keepAliveAvailable() {
+    return keepAliveAvailable;
+  }
+
+  public Flux<KeepAliveMissing> keepAliveMissing() {
+    return keepAliveMissing;
   }
 
   private boolean isKeepAliveResponse(Frame f) {
@@ -75,17 +87,22 @@ public class KeepAliveRequesterConnection extends DuplexConnectionProxy {
             .subscribe(
                 __ -> {},
                 err -> {
+                  complete();
                   errConsumer.accept(err);
-                  keepAlives.onComplete();
                   close().subscribe();
                 });
+  }
+
+  private void complete() {
+    keepAliveAvailable.onComplete();
+    keepAliveMissing.onComplete();
   }
 
   private void disposeKeepAlive() {
     if (keepAliveSubs != null) {
       keepAliveSubs.dispose();
     }
-    keepAlives.onComplete();
+    complete();
   }
 
   private Mono<Void> sendKeepAlive() {
@@ -93,8 +110,7 @@ public class KeepAliveRequesterConnection extends DuplexConnectionProxy {
     if (now - timeLastTickSentMs > timeoutMillis) {
       int count = missedAckCounter.incrementAndGet();
       if (count >= timeoutTicks) {
-        // TODO fix race with KeepAlive.KeepAliveAvailable
-        keepAlives.onNext(new KeepAlive.KeepAliveMissing(tickPeriod, timeoutTicks, count));
+        keepAliveMissing.onNext(new KeepAliveMissing(tickPeriod, timeoutTicks, count));
       }
     }
     return sendOne(Frame.Keepalive.from(Unpooled.wrappedBuffer(frameDataFactory.get()), true));

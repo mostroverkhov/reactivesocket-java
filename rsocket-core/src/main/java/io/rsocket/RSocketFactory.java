@@ -244,8 +244,10 @@ public class RSocketFactory {
                           errorConsumer);
                   keepAlivesConsumer.accept(
                       new KeepAlives(
-                          keepAliveRequesterConnection.keepAlive(),
+                          keepAliveRequesterConnection.keepAliveAvailable(),
+                          keepAliveRequesterConnection.keepAliveMissing(),
                           keepAliveRequesterConnection.close()));
+
                   return keepAliveRequesterConnection;
                 }));
       }

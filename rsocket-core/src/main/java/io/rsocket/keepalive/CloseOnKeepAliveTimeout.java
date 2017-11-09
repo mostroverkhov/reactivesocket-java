@@ -14,13 +14,12 @@ public class CloseOnKeepAliveTimeout implements Consumer<KeepAlives> {
   @Override
   public void accept(KeepAlives keepAlives) {
     keepAlives
-        .keepAlive()
-        .ofType(KeepAlive.KeepAliveMissing.class)
+        .keepAliveMissing()
         .next()
         .flatMap(keepAliveMissing -> keepAlives.closeConnection().then(Mono.just(keepAliveMissing)))
         .subscribe(
             keepAliveMissing -> errConsumer.accept(keepAliveMissingError(keepAliveMissing)),
-            errConsumer::accept);
+                errConsumer);
   }
 
   private Exception keepAliveMissingError(KeepAlive.KeepAliveMissing keepAliveMissing) {

@@ -251,6 +251,8 @@ class RSocketResponder implements RSocket {
             receiver.onComplete();
           }
           return Mono.empty();
+        case KEEPALIVE:
+          return Mono.empty();
         case ERROR:
           receiver = getChannelProcessor(streamId);
           if (receiver != null) {

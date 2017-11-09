@@ -3,17 +3,27 @@ package io.rsocket.keepalive;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class KeepAlives {
-  private Flux<KeepAlive> keepAlive;
-  private Mono<Void> closeConnection;
+import static io.rsocket.keepalive.KeepAlive.*;
 
-  public KeepAlives(Flux<KeepAlive> keepAlive, Mono<Void> closeConnection) {
-    this.keepAlive = keepAlive;
+public class KeepAlives {
+  private final Flux<KeepAliveAvailable> keepAliveAvailable;
+  private final Flux<KeepAliveMissing> keepAliveMissing;
+  private final Mono<Void> closeConnection;
+
+  public KeepAlives(Flux<KeepAliveAvailable> keepAliveAvailable,
+                    Flux<KeepAliveMissing> keepAliveMissing,
+                    Mono<Void> closeConnection) {
+    this.keepAliveAvailable = keepAliveAvailable;
+    this.keepAliveMissing = keepAliveMissing;
     this.closeConnection = closeConnection;
   }
 
-  public Flux<KeepAlive> keepAlive() {
-    return keepAlive;
+  public Flux<KeepAliveAvailable> keepAliveAvailable() {
+    return keepAliveAvailable;
+  }
+
+  public Flux<KeepAliveMissing> keepAliveMissing() {
+    return keepAliveMissing;
   }
 
   public Mono<Void> closeConnection() {
