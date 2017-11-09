@@ -41,21 +41,25 @@ import reactor.core.publisher.MonoProcessor;
  * even. Even IDs are for the streams initiated by server and odds are for streams initiated by the
  * client.
  */
-public class ClientServerInputMultiplexer {
+public class ConnectionDemux {
   private static final Logger LOGGER = LoggerFactory.getLogger("io.rsocket.FrameLogger");
 
+  private final DuplexConnection initConnection;
   private final DuplexConnection streamZeroConnection;
   private final DuplexConnection serverConnection;
   private final DuplexConnection clientConnection;
   private final DuplexConnection source;
 
-  public ClientServerInputMultiplexer(DuplexConnection source, PluginRegistry plugins) {
+  public ConnectionDemux(DuplexConnection source, PluginRegistry plugins) {
     this.source = source;
+    final MonoProcessor<Flux<Frame>> streamInit = MonoProcessor.create();
     final MonoProcessor<Flux<Frame>> streamZero = MonoProcessor.create();
     final MonoProcessor<Flux<Frame>> server = MonoProcessor.create();
     final MonoProcessor<Flux<Frame>> client = MonoProcessor.create();
 
     source = plugins.applyConnection(Type.SOURCE, source);
+    initConnection =
+        plugins.applyConnection(Type.INIT, new InternalDuplexConnection(source, streamInit));
     streamZeroConnection =
         plugins.applyConnection(Type.STREAM_ZERO, new InternalDuplexConnection(source, streamZero));
     serverConnection =
@@ -70,10 +74,10 @@ public class ClientServerInputMultiplexer {
               int streamId = frame.getStreamId();
               final Type type;
               if (streamId == 0) {
-                if (frame.getType() == FrameType.SETUP) {
-                  type = Type.STREAM_ZERO;
+                if (isInitFrame(frame)) {
+                  type = Type.INIT;
                 } else {
-                  type = Type.CLIENT;
+                  type = Type.STREAM_ZERO;
                 }
               } else if ((streamId & 0b1) == 0) {
                 type = Type.SERVER;
@@ -96,8 +100,14 @@ public class ClientServerInputMultiplexer {
                 case CLIENT:
                   client.onNext(group);
                   break;
+                case INIT:
+                  streamInit.onNext(group);
               }
             });
+  }
+
+  public DuplexConnection asInitConnection() {
+    return initConnection;
   }
 
   public DuplexConnection asServerConnection() {
@@ -112,8 +122,20 @@ public class ClientServerInputMultiplexer {
     return streamZeroConnection;
   }
 
+  public DuplexConnection asZeroAndClientConnection() {
+    return new ConnectionMux(source, streamZeroConnection, clientConnection);
+  }
+
+  public DuplexConnection asZeroAndServerConnection() {
+    return new ConnectionMux(source, streamZeroConnection, serverConnection);
+  }
+
   public Mono<Void> close() {
     return source.close();
+  }
+
+  private static boolean isInitFrame(Frame frame) {
+    return frame.getType() == FrameType.SETUP;
   }
 
   private static class InternalDuplexConnection implements DuplexConnection {

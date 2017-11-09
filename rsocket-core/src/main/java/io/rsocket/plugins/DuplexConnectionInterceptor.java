@@ -23,6 +23,7 @@ import java.util.function.BiFunction;
 public @FunctionalInterface interface DuplexConnectionInterceptor
     extends BiFunction<DuplexConnectionInterceptor.Type, DuplexConnection, DuplexConnection> {
   enum Type {
+    INIT,
     STREAM_ZERO,
     CLIENT,
     SERVER,

@@ -21,7 +21,7 @@ import io.rsocket.exceptions.SetupException;
 import io.rsocket.fragmentation.FragmentationDuplexConnection;
 import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
-import io.rsocket.internal.ClientServerInputMultiplexer;
+import io.rsocket.internal.ConnectionDemux;
 import io.rsocket.plugins.DuplexConnectionInterceptor;
 import io.rsocket.plugins.PluginRegistry;
 import io.rsocket.plugins.Plugins;
@@ -262,8 +262,8 @@ public class RSocketFactory {
                   if (mtu > 0) {
                     connection = new FragmentationDuplexConnection(connection, mtu);
                   }
-                  ClientServerInputMultiplexer multiplexer =
-                      new ClientServerInputMultiplexer(connection, plugins);
+                  ConnectionDemux multiplexer =
+                      new ConnectionDemux(connection, plugins);
 
                   RSocketClient rSocketClient =
                       new RSocketClient(
@@ -288,7 +288,9 @@ public class RSocketFactory {
                             .doOnNext(
                                 rSocket ->
                                     new RSocketServer(
-                                        multiplexer.asServerConnection(), rSocket, errorConsumer))
+                                        multiplexer.asZeroAndServerConnection(),
+                                        rSocket,
+                                        errorConsumer))
                             .then(finalConnection.sendOne(setupFrame))
                             .then(wrappedRSocketClient);
                       });
@@ -358,11 +360,11 @@ public class RSocketFactory {
                   if (mtu > 0) {
                     connection = new FragmentationDuplexConnection(connection, mtu);
                   }
-                  ClientServerInputMultiplexer multiplexer =
-                      new ClientServerInputMultiplexer(connection, plugins);
+                  ConnectionDemux multiplexer =
+                      new ConnectionDemux(connection, plugins);
 
                   return multiplexer
-                      .asStreamZeroConnection()
+                      .asInitConnection()
                       .receive()
                       .next()
                       .flatMap(setupFrame -> processSetupFrame(multiplexer, setupFrame));
@@ -370,7 +372,7 @@ public class RSocketFactory {
       }
 
       private Mono<Void> processSetupFrame(
-          ClientServerInputMultiplexer multiplexer, Frame setupFrame) {
+              ConnectionDemux multiplexer, Frame setupFrame) {
         int version = Frame.Setup.version(setupFrame);
         if (version != SetupFrameFlyweight.CURRENT_VERSION) {
           InvalidSetupException error =
@@ -392,11 +394,12 @@ public class RSocketFactory {
                 sender -> acceptor.get().accept(setupPayload, sender).map(plugins::applyServer))
             .map(
                 handler ->
-                    new RSocketServer(multiplexer.asClientConnection(), handler, errorConsumer))
+                    new RSocketServer(
+                        multiplexer.asZeroAndClientConnection(), handler, errorConsumer))
             .then();
       }
 
-      Mono<Void> setupError(ClientServerInputMultiplexer multiplexer, SetupException error) {
+      Mono<Void> setupError(ConnectionDemux multiplexer, SetupException error) {
         return multiplexer
             .asStreamZeroConnection()
             .sendOne(Frame.Error.from(0, error))
