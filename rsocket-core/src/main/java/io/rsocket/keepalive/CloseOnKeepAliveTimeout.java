@@ -19,7 +19,7 @@ public class CloseOnKeepAliveTimeout implements Consumer<KeepAlives> {
         .flatMap(keepAliveMissing -> keepAlives.closeConnection().then(Mono.just(keepAliveMissing)))
         .subscribe(
             keepAliveMissing -> errConsumer.accept(keepAliveMissingError(keepAliveMissing)),
-                errConsumer);
+            errConsumer);
   }
 
   private Exception keepAliveMissingError(KeepAlive.KeepAliveMissing keepAliveMissing) {

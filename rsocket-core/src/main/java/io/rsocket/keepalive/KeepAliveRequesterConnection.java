@@ -1,24 +1,23 @@
 package io.rsocket.keepalive;
 
+import static io.rsocket.keepalive.KeepAlive.*;
+
 import io.netty.buffer.Unpooled;
 import io.rsocket.DuplexConnection;
 import io.rsocket.DuplexConnectionProxy;
 import io.rsocket.Frame;
 import io.rsocket.FrameType;
+import io.rsocket.keepalive.KeepAlive.KeepAliveAvailable;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-
-import io.rsocket.keepalive.KeepAlive.KeepAliveAvailable;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxProcessor;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.UnicastProcessor;
-
-import static io.rsocket.keepalive.KeepAlive.*;
 
 public class KeepAliveRequesterConnection extends DuplexConnectionProxy {
 
@@ -26,7 +25,7 @@ public class KeepAliveRequesterConnection extends DuplexConnectionProxy {
       UnicastProcessor.<KeepAliveAvailable>create().serialize();
 
   private final FluxProcessor<KeepAliveMissing, KeepAliveMissing> keepAliveMissing =
-          UnicastProcessor.<KeepAliveMissing>create().serialize();
+      UnicastProcessor.<KeepAliveMissing>create().serialize();
 
   private final Duration tickPeriod;
   private final int timeoutTicks;
