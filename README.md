@@ -1,4 +1,9 @@
-#### Forked project with a goal to add missing and important rsocket protocol features. Effort will be made to implement them as plugins to share with [rsocket-java-backport](https://github.com/mostroverkhov/rsocket-java-backport) and simplify upstream merges
+#### Forked project with a goal to add missing and important rsocket protocol features. Effort will be made to implement them as plugins to share with [rsocket-java-backport](https://github.com/mostroverkhov/rsocket-java-backport)
+
+Changes
+* receiving metadata push works for both sides of connection
+* alternative keep-alive api to add/listen data to keep-alive frames, and react to missing keep-alive on application level
+* lease support (became broken due to changes in upstream project)
 
 # RSocket
 
