@@ -10,11 +10,11 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-public class ZeroFramesFilter extends DuplexConnectionProxy {
+public class ZeroFramesFilterConnection extends DuplexConnectionProxy {
 
     private final Set<FrameType> forbiddenTypes;
 
-    public ZeroFramesFilter(DuplexConnection source, FrameType... forbiddenTypes) {
+    public ZeroFramesFilterConnection(DuplexConnection source, FrameType... forbiddenTypes) {
         super(source);
         assertArgs(forbiddenTypes);
         this.forbiddenTypes = toSet(forbiddenTypes);
@@ -22,7 +22,13 @@ public class ZeroFramesFilter extends DuplexConnectionProxy {
 
     @Override
     public Flux<Frame> receive() {
-       return super.receive().filter(this::isAllowed);
+       return super.receive().filter(frame -> {
+           boolean allowed = isAllowed(frame);
+           if (!allowed) {
+               frame.release();
+           }
+           return allowed;
+       });
     }
 
     private boolean isAllowed(Frame frame) {
