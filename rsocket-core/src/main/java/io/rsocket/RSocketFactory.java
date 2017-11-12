@@ -25,6 +25,7 @@ import io.rsocket.fragmentation.FragmentationDuplexConnection;
 import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
 import io.rsocket.internal.ConnectionDemux;
+import io.rsocket.internal.ZeroErrorHandlingConnection;
 import io.rsocket.internal.ZeroFramesFilter;
 import io.rsocket.keepalive.CloseOnKeepAliveTimeout;
 import io.rsocket.keepalive.KeepAliveRequesterConnection;
@@ -253,8 +254,10 @@ public class RSocketFactory {
                   return keepAliveRequesterConnection;
                 }));
 
+        addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+
         addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO,
-                conn -> new ZeroFramesFilter(conn, KEEPALIVE, LEASE)));
+                conn -> new ZeroFramesFilter(conn, KEEPALIVE, LEASE, ERROR)));
       }
 
       @Override
@@ -363,8 +366,10 @@ public class RSocketFactory {
         addConnectionPlugin(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
 
+        addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+
         addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO,
-                conn -> new ZeroFramesFilter(conn, KEEPALIVE, LEASE)));
+                conn -> new ZeroFramesFilter(conn, KEEPALIVE, LEASE, ERROR)));
       }
 
       @Override

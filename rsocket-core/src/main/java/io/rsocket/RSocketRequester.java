@@ -397,31 +397,15 @@ class RSocketRequester implements RSocket {
 
   private void handleIncomingFrames(Frame frame) {
     try {
-      int streamId = frame.getStreamId();
-      FrameType type = frame.getType();
-      if (streamId == 0) {
-        handleStreamZero(type, frame);
-      } else {
-        handleFrame(streamId, type, frame);
-      }
+      handleFrame(frame);
     } finally {
       frame.release();
     }
   }
 
-  private void handleStreamZero(FrameType type, Frame frame) {
-    switch (type) {
-      case ERROR:
-        throw Exceptions.from(frame);
-      default:
-        // Ignore unknown frames. Throwing an error will close the socket.
-        errorConsumer.accept(
-            new IllegalStateException(
-                "Client received supported frame on stream 0: " + frame.toString()));
-    }
-  }
-
-  private void handleFrame(int streamId, FrameType type, Frame frame) {
+  private void handleFrame(Frame frame) {
+    int streamId = frame.getStreamId();
+    FrameType type = frame.getType();
     Subscriber<Payload> receiver;
     synchronized (this) {
       receiver = receivers.get(streamId);
