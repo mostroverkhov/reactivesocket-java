@@ -235,10 +235,6 @@ class RSocketResponder implements RSocket {
           return Mono.empty();
         case METADATA_PUSH:
           return metadataPush(new PayloadImpl(frame));
-        case LEASE:
-          // Lease must not be received here as this is the server end of the socket which sends
-          // leases.
-          return Mono.empty();
         case NEXT:
           receiver = getChannelProcessor(streamId);
           if (receiver != null) {
@@ -250,8 +246,6 @@ class RSocketResponder implements RSocket {
           if (receiver != null) {
             receiver.onComplete();
           }
-          return Mono.empty();
-        case KEEPALIVE:
           return Mono.empty();
         case ERROR:
           receiver = getChannelProcessor(streamId);

@@ -413,10 +413,6 @@ class RSocketRequester implements RSocket {
     switch (type) {
       case ERROR:
         throw Exceptions.from(frame);
-      case LEASE:
-        break;
-      case KEEPALIVE:
-        break;
       default:
         // Ignore unknown frames. Throwing an error will close the socket.
         errorConsumer.accept(
