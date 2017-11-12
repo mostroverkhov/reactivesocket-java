@@ -51,7 +51,8 @@ public class KeepAliveRequesterTest {
         .take(2)
         .subscribe(__ -> receiver.onNext(responseFrame("hello")));
 
-    StepVerifier.create(receiveConn.keepAliveAvailable().takeUntilOther(Mono.delay(Duration.ofSeconds(2))))
+    StepVerifier.create(
+            receiveConn.keepAliveAvailable().takeUntilOther(Mono.delay(Duration.ofSeconds(2))))
         .expectNextMatches(keepAlive -> isKeepAliveAvailable(keepAlive, "hello"))
         .expectNextMatches(keepAlive -> isKeepAliveAvailable(keepAlive, "hello"))
         .expectComplete()
@@ -67,7 +68,10 @@ public class KeepAliveRequesterTest {
     receiveConn.receive().subscribe();
 
     StepVerifier.create(
-            receiveConn.keepAliveMissing().takeUntilOther(Mono.delay(Duration.ofSeconds(4))).take(2))
+            receiveConn
+                .keepAliveMissing()
+                .takeUntilOther(Mono.delay(Duration.ofSeconds(4)))
+                .take(2))
         .expectNextMatches(keepAlive -> isKeepAliveMissing(keepAlive, 3))
         .expectNextMatches(keepAlive -> isKeepAliveMissing(keepAlive, 4))
         .expectComplete()

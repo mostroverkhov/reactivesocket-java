@@ -254,9 +254,12 @@ public class RSocketFactory {
                   return keepAliveRequesterConnection;
                 }));
 
-        addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
 
-        addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO,
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(
+                STREAM_ZERO,
                 conn -> new ZeroFramesFilterConnection(conn, KEEPALIVE, LEASE, ERROR)));
       }
 
@@ -366,9 +369,12 @@ public class RSocketFactory {
         addConnectionPlugin(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
 
-        addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
 
-        addConnectionPlugin(new PerTypeDuplexConnectionInterceptor(STREAM_ZERO,
+        addConnectionPlugin(
+            new PerTypeDuplexConnectionInterceptor(
+                STREAM_ZERO,
                 conn -> new ZeroFramesFilterConnection(conn, KEEPALIVE, LEASE, ERROR)));
       }
 
