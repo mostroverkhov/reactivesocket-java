@@ -456,9 +456,6 @@ class RSocketRequester implements RSocket {
             receivers.remove(streamId);
           }
           break;
-        default:
-          throw new IllegalStateException(
-              "Client received supported frame on stream " + streamId + ": " + frame.toString());
       }
     }
   }

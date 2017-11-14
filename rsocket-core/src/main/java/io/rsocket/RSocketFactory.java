@@ -16,9 +16,6 @@
 
 package io.rsocket;
 
-import static io.rsocket.FrameType.*;
-import static io.rsocket.plugins.DuplexConnectionInterceptor.Type.*;
-
 import io.rsocket.exceptions.InvalidSetupException;
 import io.rsocket.exceptions.SetupException;
 import io.rsocket.fragmentation.FragmentationDuplexConnection;
@@ -26,7 +23,6 @@ import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
 import io.rsocket.internal.ConnectionDemux;
 import io.rsocket.internal.ZeroErrorHandlingConnection;
-import io.rsocket.internal.ZeroFramesFilterConnection;
 import io.rsocket.keepalive.CloseOnKeepAliveTimeout;
 import io.rsocket.keepalive.KeepAliveRequesterConnection;
 import io.rsocket.keepalive.KeepAliveResponderConnection;
@@ -35,12 +31,15 @@ import io.rsocket.plugins.*;
 import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
 import io.rsocket.util.PayloadImpl;
+import reactor.core.publisher.Mono;
+
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import reactor.core.publisher.Mono;
+
+import static io.rsocket.plugins.DuplexConnectionInterceptor.Type.STREAM_ZERO;
 
 /** Factory for creating RSocket clients and servers. */
 public class RSocketFactory {
@@ -256,11 +255,6 @@ public class RSocketFactory {
 
         addConnectionPlugin(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
-
-        addConnectionPlugin(
-            new PerTypeDuplexConnectionInterceptor(
-                STREAM_ZERO,
-                conn -> new ZeroFramesFilterConnection(conn, KEEPALIVE, LEASE, ERROR)));
       }
 
       @Override
@@ -371,11 +365,6 @@ public class RSocketFactory {
 
         addConnectionPlugin(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
-
-        addConnectionPlugin(
-            new PerTypeDuplexConnectionInterceptor(
-                STREAM_ZERO,
-                conn -> new ZeroFramesFilterConnection(conn, KEEPALIVE, LEASE, ERROR)));
       }
 
       @Override

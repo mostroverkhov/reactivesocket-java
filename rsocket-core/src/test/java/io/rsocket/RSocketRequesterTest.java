@@ -93,16 +93,6 @@ public class RSocketRequesterTest {
   }
 
   @Test(timeout = 2_000)
-  public void testHandleSetupException() {
-    rule.connection.addToReceivedBuffer(Frame.Error.from(0, new RejectedSetupException("boom")));
-    assertThat("Unexpected errors.", rule.errors, hasSize(1));
-    assertThat(
-        "Unexpected error received.",
-        rule.errors,
-        contains(instanceOf(RejectedSetupException.class)));
-  }
-
-  @Test(timeout = 2_000)
   public void testHandleApplicationException() {
     rule.connection.clearSendReceiveBuffers();
     Publisher<Payload> response = rule.socket.requestResponse(PayloadImpl.EMPTY);

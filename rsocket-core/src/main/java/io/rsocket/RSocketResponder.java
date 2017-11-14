@@ -259,17 +259,13 @@ class RSocketResponder implements RSocket {
             receiver.onNext(new PayloadImpl(frame));
             receiver.onComplete();
           }
-
           return Mono.empty();
 
         case SETUP:
           return handleError(
               streamId, new IllegalStateException("Setup frame received post setup."));
         default:
-          return handleError(
-              streamId,
-              new IllegalStateException(
-                  "ServerRSocket: Unexpected frame type: " + frame.getType()));
+          return Mono.empty();
       }
     } finally {
       frame.release();
