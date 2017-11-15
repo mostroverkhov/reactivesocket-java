@@ -8,6 +8,7 @@ import io.rsocket.transport.netty.client.TcpClientTransport;
 import io.rsocket.transport.netty.server.NettyContextCloseable;
 import io.rsocket.transport.netty.server.TcpServerTransport;
 import io.rsocket.util.PayloadImpl;
+import java.time.Duration;
 import java.util.Date;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -42,6 +43,7 @@ public class LeaseClientServeReqRep {
     RSocket clientSocket =
         CoolRSocketFactory.connect()
             .enableLease(clientLeaseControl)
+            .keepAlive(Duration.ofSeconds(1), 3, keeps -> {})
             .transport(TcpClientTransport.create("localhost", 7000))
             .start()
             .block();
