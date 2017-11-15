@@ -30,7 +30,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
 import io.rsocket.exceptions.ApplicationException;
-import io.rsocket.exceptions.RejectedSetupException;
 import io.rsocket.frame.RequestFrameFlyweight;
 import io.rsocket.test.util.TestSubscriber;
 import io.rsocket.util.PayloadImpl;

@@ -16,6 +16,8 @@
 
 package io.rsocket;
 
+import static io.rsocket.plugins.DuplexConnectionInterceptor.Type.STREAM_ZERO;
+
 import io.rsocket.exceptions.InvalidSetupException;
 import io.rsocket.exceptions.SetupException;
 import io.rsocket.fragmentation.FragmentationDuplexConnection;
@@ -31,15 +33,12 @@ import io.rsocket.plugins.*;
 import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
 import io.rsocket.util.PayloadImpl;
-import reactor.core.publisher.Mono;
-
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-
-import static io.rsocket.plugins.DuplexConnectionInterceptor.Type.STREAM_ZERO;
+import reactor.core.publisher.Mono;
 
 /** Factory for creating RSocket clients and servers. */
 public class RSocketFactory {
