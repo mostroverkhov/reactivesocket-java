@@ -247,14 +247,15 @@ public class LeaseInterceptor implements DuplexConnectionInterceptor {
 
     @Override
     public Mono<Void> send(Publisher<Frame> frames) {
-      return Flux.from(frames)
-          .concatMap(
-              frame -> {
-                Function<Frame, Frame> f =
-                    isLeaseEnabled() ? this::handleFrame : Function.identity();
-                return mono(f).apply(frame);
-              })
-          .then();
+      return super.send(
+              Flux.from(frames)
+                      .concatMap(
+                              frame -> {
+                                Function<Frame, Frame> f =
+                                        isLeaseEnabled() ? this::handleFrame : Function.identity();
+                                return mono(f).apply(frame);
+                              })
+      );
     }
 
     private Function<Frame, Mono<Frame>> mono(Function<Frame, Frame> f) {
