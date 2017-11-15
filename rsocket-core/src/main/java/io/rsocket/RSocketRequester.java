@@ -32,6 +32,7 @@ import java.util.function.Supplier;
 import javax.annotation.Nullable;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
+import reactor.core.Disposable;
 import reactor.core.publisher.*;
 
 /** Client Side of a RSocket socket. Sends {@link Frame}s to a {@link RSocketResponder} */
@@ -46,7 +47,7 @@ class RSocketRequester implements RSocket {
   private final MonoProcessor<Void> started;
   private final IntObjectHashMap<LimitableRequestPublisher> senders;
   private final IntObjectHashMap<Subscriber<Payload>> receivers;
-  private final UnboundedProcessor<Frame> sendProcessor;
+  private final UnboundedProcessor<Send> sendProcessor;
 
   RSocketRequester(
       DuplexConnection connection,
@@ -71,8 +72,7 @@ class RSocketRequester implements RSocket {
         .doOnError(errorConsumer)
         .subscribe();
 
-    connection
-        .send(sendProcessor)
+    send(sendProcessor)
         .doOnError(this::handleSendProcessorError)
         .doFinally(this::handleSendProcessorCancel)
         .subscribe();
@@ -104,6 +104,10 @@ class RSocketRequester implements RSocket {
     for (LimitableRequestPublisher p : values1) {
       p.cancel();
     }
+  }
+
+  private Mono<Void> send(Flux<Send> sends) {
+    return sends.flatMap(Send::send).then();
   }
 
   private void handleSendProcessorCancel(SignalType t) {
@@ -138,7 +142,7 @@ class RSocketRequester implements RSocket {
               final int streamId = streamIdSupplier.nextStreamId();
               final Frame requestFrame =
                   Frame.Request.from(streamId, FrameType.FIRE_AND_FORGET, payload, 1);
-              sendProcessor.onNext(requestFrame);
+              sendProcessor.onNext(new Send(requestFrame));
             });
 
     return started.then(defer);
@@ -162,7 +166,7 @@ class RSocketRequester implements RSocket {
   @Override
   public Mono<Void> metadataPush(Payload payload) {
     final Frame requestFrame = Frame.Request.from(0, FrameType.METADATA_PUSH, payload, 1);
-    sendProcessor.onNext(requestFrame);
+    sendProcessor.onNext(new Send(requestFrame));
     return Mono.empty();
   }
 
@@ -202,22 +206,23 @@ class RSocketRequester implements RSocket {
                           final Frame requestFrame =
                               Frame.Request.from(streamId, FrameType.REQUEST_STREAM, payload, l);
 
-                          sendProcessor.onNext(requestFrame);
+                          sendProcessor.onNext(new Send<>(requestFrame, receiver));
                         } else if (contains(streamId) && !receiver.isTerminated()) {
-                          sendProcessor.onNext(Frame.RequestN.from(streamId, l));
+                          sendProcessor.onNext(
+                              new Send<>(Frame.RequestN.from(streamId, l), receiver));
                         }
                         sendProcessor.drain();
                       })
                   .doOnError(
                       t -> {
                         if (contains(streamId) && !receiver.isTerminated()) {
-                          sendProcessor.onNext(Frame.Error.from(streamId, t));
+                          sendProcessor.onNext(new Send<>(Frame.Error.from(streamId, t), receiver));
                         }
                       })
                   .doOnCancel(
                       () -> {
                         if (contains(streamId) && !receiver.isTerminated()) {
-                          sendProcessor.onNext(Frame.Cancel.from(streamId));
+                          sendProcessor.onNext(new Send<>(Frame.Cancel.from(streamId), receiver));
                         }
                       })
                   .doFinally(
@@ -241,11 +246,14 @@ class RSocketRequester implements RSocket {
                 receivers.put(streamId, receiver);
               }
 
-              sendProcessor.onNext(requestFrame);
+              sendProcessor.onNext(new Send<>(requestFrame, receiver));
 
               return receiver
-                  .doOnError(t -> sendProcessor.onNext(Frame.Error.from(streamId, t)))
-                  .doOnCancel(() -> sendProcessor.onNext(Frame.Cancel.from(streamId)))
+                  .doOnError(
+                      t ->
+                          sendProcessor.onNext(new Send<>(Frame.Error.from(streamId, t), receiver)))
+                  .doOnCancel(
+                      () -> sendProcessor.onNext(new Send<>(Frame.Cancel.from(streamId), receiver)))
                   .doFinally(
                       s -> {
                         removeReceiver(streamId);
@@ -268,7 +276,7 @@ class RSocketRequester implements RSocket {
 
               void sendOneFrame(Frame frame) {
                 if (isValidToSendFrame()) {
-                  sendProcessor.onNext(frame);
+                  sendProcessor.onNext(new Send<>(frame, receiver));
                 }
               }
 
@@ -329,7 +337,7 @@ class RSocketRequester implements RSocket {
                                         });
 
                             requestFrames
-                                .doOnNext(sendProcessor::onNext)
+                                .doOnNext(t1 -> sendProcessor.onNext(new Send<>(t1, receiver)))
                                 .doOnError(
                                     t -> {
                                       errorConsumer.accept(t);
@@ -490,5 +498,36 @@ class RSocketRequester implements RSocket {
 
   private synchronized void removeSender(int streamId) {
     senders.remove(streamId);
+  }
+
+  private class Send<T extends Subscriber<?> & Disposable> {
+    private final Frame frame;
+    private final T subscriber;
+
+    Send(Frame frame, T subscriber) {
+      this.frame = frame;
+      this.subscriber = subscriber;
+    }
+
+    public Send(Frame frame) {
+      this(frame, null);
+    }
+
+    public Mono<Void> send() {
+      return connection
+          .send(Mono.just(frame))
+          .onErrorResume(
+              err -> {
+                if (err instanceof ClosedChannelException) {
+                  return Mono.error(err);
+                } else {
+                  if (subscriber != null && !subscriber.isDisposed()) {
+                    subscriber.onError(err);
+                  }
+                  return Mono.empty();
+                }
+              })
+          .then();
+    }
   }
 }
