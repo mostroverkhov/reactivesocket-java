@@ -1,4 +1,4 @@
-#### Forked project with a goal to add missing and important rsocket protocol features. Effort will be made to implement them as plugins to share with [rsocket-java-backport](https://github.com/mostroverkhov/rsocket-java-backport)
+#### Forked project with a goal to add missing and important rsocket protocol features. Effort will be made to implement them as plugins to share with [rsocket-android](https://github.com/mostroverkhov/rsocket-android)
 
 Changes
 * lease support
