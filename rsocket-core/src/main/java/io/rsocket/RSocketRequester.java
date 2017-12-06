@@ -152,7 +152,8 @@ class RSocketRequester implements RSocket {
 
   @Override
   public Flux<Payload> requestChannel(Publisher<Payload> payloads) {
-    return errorOrPublisher(() -> handleChannel(Flux.from(payloads), FrameType.REQUEST_CHANNEL), Flux::error);
+    return errorOrPublisher(
+        () -> handleChannel(Flux.from(payloads), FrameType.REQUEST_CHANNEL), Flux::error);
   }
 
   @Override
@@ -175,11 +176,9 @@ class RSocketRequester implements RSocket {
     return connection.onClose();
   }
 
-  private <T, K extends Publisher<T>> K errorOrPublisher(Supplier<K> pubSupplier,
-                                                         Function<Throwable,K> errF) {
-    return errorSignal != null
-            ? errF.apply(errorSignal)
-            : pubSupplier.get();
+  private <T, K extends Publisher<T>> K errorOrPublisher(
+      Supplier<K> pubSupplier, Function<Throwable, K> errF) {
+    return errorSignal != null ? errF.apply(errorSignal) : pubSupplier.get();
   }
 
   private Mono<Void> handleMetadataPush(Payload payload) {
@@ -189,11 +188,12 @@ class RSocketRequester implements RSocket {
   }
 
   private Mono<Void> handleFireAndForget(Payload payload) {
-    return started.then(Mono.fromRunnable(
+    return started.then(
+        Mono.fromRunnable(
             () -> {
               final int streamId = streamIdSupplier.nextStreamId();
               final Frame requestFrame =
-                      Frame.Request.from(streamId, FrameType.FIRE_AND_FORGET, payload, 1);
+                  Frame.Request.from(streamId, FrameType.FIRE_AND_FORGET, payload, 1);
               sendProcessor.onNext(new Send(requestFrame));
             }));
   }
