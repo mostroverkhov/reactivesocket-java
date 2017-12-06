@@ -85,12 +85,13 @@ public class TestDuplexConnection implements DuplexConnection {
 
   @Override
   public Mono<Void> close() {
+    close.onComplete();
     return close;
   }
 
   @Override
   public Mono<Void> onClose() {
-    return close();
+    return close;
   }
 
   public Frame awaitSend() throws InterruptedException {

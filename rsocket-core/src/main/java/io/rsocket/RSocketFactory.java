@@ -388,6 +388,7 @@ public class RSocketFactory {
       private Mono<Void> processSetupFrame(ConnectionDemux multiplexer, Frame setupFrame) {
         int version = Frame.Setup.version(setupFrame);
         if (version != SetupFrameFlyweight.CURRENT_VERSION) {
+          setupFrame.release();
           InvalidSetupException error =
               new InvalidSetupException(
                   "Unsupported version " + VersionFlyweight.toString(version));

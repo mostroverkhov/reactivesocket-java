@@ -33,9 +33,11 @@ import io.rsocket.exceptions.ApplicationException;
 import io.rsocket.frame.RequestFrameFlyweight;
 import io.rsocket.test.util.TestSubscriber;
 import io.rsocket.util.PayloadImpl;
+import java.nio.channels.ClosedChannelException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.Rule;
 import org.junit.Test;
@@ -45,6 +47,7 @@ import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 public class RSocketRequesterTest {
 
@@ -140,6 +143,31 @@ public class RSocketRequesterTest {
     assertThat("Unexpected frame sent on the connection.", sent.get(1).getType(), is(CANCEL));
   }
 
+  @Test
+  public void reqResponseErrorAfterClose() throws Exception {
+    assertMonoError(rsocket -> rsocket.requestResponse(new PayloadImpl("test")));
+  }
+
+  @Test
+  public void reqStreamErrorAfterClose() throws Exception {
+    assertFluxError(rsocket -> rsocket.requestStream(new PayloadImpl("test")));
+  }
+
+  @Test
+  public void reqChannelErrorAfterClose() throws Exception {
+    assertFluxError(rsocket -> rsocket.requestChannel(Flux.just(new PayloadImpl("test"))));
+  }
+
+  @Test
+  public void fnfErrorAfterClose() throws Exception {
+    assertMonoError(rsocket -> rsocket.fireAndForget(new PayloadImpl("test")));
+  }
+
+  @Test
+  public void metadataPushErrorAfterClose() throws Exception {
+    assertMonoError(rsocket -> rsocket.metadataPush(new PayloadImpl("test")));
+  }
+
   @Test(timeout = 2_000)
   public void testRequestReplyErrorOnSend() {
     rule.connection.setAvailability(0); // Fails send
@@ -164,7 +192,7 @@ public class RSocketRequesterTest {
     assertThat("Stream ID reused.", streamId2, not(equalTo(streamId)));
   }
 
-  public int sendRequestResponse(Publisher<Payload> response) {
+  private int sendRequestResponse(Publisher<Payload> response) {
     Subscriber<Payload> sub = TestSubscriber.create();
     response.subscribe(sub);
     int streamId = rule.getStreamIdForRequestType(REQUEST_RESPONSE);
@@ -173,6 +201,22 @@ public class RSocketRequesterTest {
     verify(sub).onNext(anyPayload());
     verify(sub).onComplete();
     return streamId;
+  }
+
+  private void assertFluxError(Function<RSocket, Flux<Payload>> f) {
+    rule.connection.close().subscribe();
+    Flux<Payload> response = f.apply(rule.socket).delaySubscription(Duration.ofMillis(100));
+    StepVerifier.create(response)
+        .expectError(ClosedChannelException.class)
+        .verify(Duration.ofMillis(5_000));
+  }
+
+  private <T> void assertMonoError(Function<RSocket, Mono<T>> f) {
+    rule.connection.close().subscribe();
+    Mono<T> response = f.apply(rule.socket).delaySubscription(Duration.ofMillis(100));
+    StepVerifier.create(response)
+        .expectError(ClosedChannelException.class)
+        .verify(Duration.ofMillis(5_000));
   }
 
   public static class ClientSocketRule extends AbstractSocketRule<RSocketRequester> {

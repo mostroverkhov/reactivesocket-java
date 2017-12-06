@@ -25,6 +25,7 @@ import io.rsocket.exceptions.ApplicationException;
 import io.rsocket.test.util.LocalDuplexConnection;
 import io.rsocket.test.util.TestSubscriber;
 import io.rsocket.util.PayloadImpl;
+import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import org.hamcrest.MatcherAssert;
@@ -84,6 +85,23 @@ public class RSocketTest {
     latch.await();
   }
 
+  @Test(timeout = 2_000L)
+  public void testCleanup() throws Exception {
+    CountDownLatch latch = new CountDownLatch(1);
+    rule.crs
+        .requestStream(new PayloadImpl("hi"))
+        .doOnError(
+            t -> {
+              Assert.assertTrue(t instanceof ClosedChannelException);
+              latch.countDown();
+            })
+        .subscribe();
+
+    rule.crs.cleanup();
+
+    latch.await();
+  }
+
   public static class SocketRule extends ExternalResource {
 
     private RSocketRequester crs;
@@ -121,6 +139,11 @@ public class RSocketTest {
                 @Override
                 public Mono<Payload> requestResponse(Payload payload) {
                   return Mono.just(payload);
+                }
+
+                @Override
+                public Flux<Payload> requestStream(Payload payload) {
+                  return Flux.never();
                 }
 
                 @Override
