@@ -48,6 +48,7 @@ class RSocketRequester implements RSocket {
   private final IntObjectHashMap<LimitableRequestPublisher> senders;
   private final IntObjectHashMap<Subscriber<Payload>> receivers;
   private final UnboundedProcessor<Send> sendProcessor;
+  private volatile Throwable errorSignal;
 
   RSocketRequester(
       DuplexConnection connection,
@@ -136,38 +137,27 @@ class RSocketRequester implements RSocket {
 
   @Override
   public Mono<Void> fireAndForget(Payload payload) {
-    Mono<Void> defer =
-        Mono.fromRunnable(
-            () -> {
-              final int streamId = streamIdSupplier.nextStreamId();
-              final Frame requestFrame =
-                  Frame.Request.from(streamId, FrameType.FIRE_AND_FORGET, payload, 1);
-              sendProcessor.onNext(new Send(requestFrame));
-            });
-
-    return started.then(defer);
+    return errorOrPublisher(() -> handleFireAndForget(payload), Mono::error);
   }
 
   @Override
   public Mono<Payload> requestResponse(Payload payload) {
-    return handleRequestResponse(payload);
+    return errorOrPublisher(() -> handleRequestResponse(payload), Mono::error);
   }
 
   @Override
   public Flux<Payload> requestStream(Payload payload) {
-    return handleRequestStream(payload);
+    return errorOrPublisher(() -> handleRequestStream(payload), Flux::error);
   }
 
   @Override
   public Flux<Payload> requestChannel(Publisher<Payload> payloads) {
-    return handleChannel(Flux.from(payloads), FrameType.REQUEST_CHANNEL);
+    return errorOrPublisher(() -> handleChannel(Flux.from(payloads), FrameType.REQUEST_CHANNEL), Flux::error);
   }
 
   @Override
   public Mono<Void> metadataPush(Payload payload) {
-    final Frame requestFrame = Frame.Request.from(0, FrameType.METADATA_PUSH, payload, 1);
-    sendProcessor.onNext(new Send(requestFrame));
-    return Mono.empty();
+    return errorOrPublisher(() -> handleMetadataPush(payload), Mono::error);
   }
 
   @Override
@@ -185,7 +175,30 @@ class RSocketRequester implements RSocket {
     return connection.onClose();
   }
 
-  public Flux<Payload> handleRequestStream(final Payload payload) {
+  private <T, K extends Publisher<T>> K errorOrPublisher(Supplier<K> pubSupplier,
+                                                         Function<Throwable,K> errF) {
+    return errorSignal != null
+            ? errF.apply(errorSignal)
+            : pubSupplier.get();
+  }
+
+  private Mono<Void> handleMetadataPush(Payload payload) {
+    final Frame requestFrame = Frame.Request.from(0, FrameType.METADATA_PUSH, payload, 1);
+    sendProcessor.onNext(new Send(requestFrame));
+    return Mono.empty();
+  }
+
+  private Mono<Void> handleFireAndForget(Payload payload) {
+    return started.then(Mono.fromRunnable(
+            () -> {
+              final int streamId = streamIdSupplier.nextStreamId();
+              final Frame requestFrame =
+                      Frame.Request.from(streamId, FrameType.FIRE_AND_FORGET, payload, 1);
+              sendProcessor.onNext(new Send(requestFrame));
+            }));
+  }
+
+  private Flux<Payload> handleRequestStream(final Payload payload) {
     return started.thenMany(
         Flux.defer(
             () -> {
@@ -372,18 +385,22 @@ class RSocketRequester implements RSocket {
   }
 
   protected void cleanup() {
-    Collection<Subscriber<Payload>> subscribers;
-    Collection<LimitableRequestPublisher> publishers;
-    synchronized (RSocketRequester.this) {
-      subscribers = receivers.values();
-      publishers = senders.values();
-
-      senders.clear();
-      receivers.clear();
+    errorSignal = CLOSED_CHANNEL_EXCEPTION;
+    try {
+      Collection<Subscriber<Payload>> subscribers;
+      Collection<LimitableRequestPublisher> publishers;
+      synchronized (RSocketRequester.this) {
+        subscribers = receivers.values();
+        publishers = senders.values();
+      }
+      subscribers.forEach(this::cleanUpSubscriber);
+      publishers.forEach(this::cleanUpLimitableRequestPublisher);
+    } finally {
+      synchronized (this) {
+        senders.clear();
+        receivers.clear();
+      }
     }
-
-    subscribers.forEach(this::cleanUpSubscriber);
-    publishers.forEach(this::cleanUpLimitableRequestPublisher);
   }
 
   private synchronized void cleanUpLimitableRequestPublisher(
