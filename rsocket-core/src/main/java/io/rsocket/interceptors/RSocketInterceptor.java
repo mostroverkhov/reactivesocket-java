@@ -14,5 +14,10 @@
  *  limitations under the License.
  */
 
-@javax.annotation.ParametersAreNonnullByDefault
-package io.rsocket.lease;
+package io.rsocket.interceptors;
+
+import io.rsocket.RSocket;
+import java.util.function.Function;
+
+/** */
+public @FunctionalInterface interface RSocketInterceptor extends Function<RSocket, RSocket> {}

@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 
 import io.rsocket.Frame;
 import io.rsocket.frame.SetupFrameFlyweight;
-import io.rsocket.plugins.PluginRegistry;
+import io.rsocket.interceptors.InterceptorRegistry;
 import io.rsocket.test.util.TestDuplexConnection;
 import io.rsocket.util.PayloadImpl;
 import java.time.Duration;
@@ -35,7 +35,7 @@ public class ClientServerInputMultiplexerTest {
   @Before
   public void setup() {
     source = new TestDuplexConnection();
-    multiplexer = new ConnectionDemux(source, new PluginRegistry());
+    multiplexer = new ConnectionDemux(source, new InterceptorRegistry());
   }
 
   @Test

@@ -12,7 +12,7 @@ import reactor.core.publisher.UnicastProcessor;
 
 public class KeepAliveResponderConnection extends DuplexConnectionProxy {
 
-  private final FluxProcessor<Frame, Frame> sender = UnicastProcessor.<Frame>create().serialize();
+  private final FluxProcessor<Frame, Frame> sender = UnicastProcessor.create();
 
   public KeepAliveResponderConnection(DuplexConnection zeroConn) {
     super(zeroConn);

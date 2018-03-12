@@ -19,8 +19,8 @@ package io.rsocket.internal;
 import io.rsocket.DuplexConnection;
 import io.rsocket.Frame;
 import io.rsocket.FrameType;
-import io.rsocket.plugins.DuplexConnectionInterceptor.Type;
-import io.rsocket.plugins.PluginRegistry;
+import io.rsocket.interceptors.DuplexConnectionInterceptor.Type;
+import io.rsocket.interceptors.InterceptorRegistry;
 import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,22 +50,24 @@ public class ConnectionDemux {
   private final DuplexConnection clientConnection;
   private final DuplexConnection source;
 
-  public ConnectionDemux(DuplexConnection source, PluginRegistry plugins) {
+  public ConnectionDemux(DuplexConnection source, InterceptorRegistry interceptors) {
     this.source = source;
     final MonoProcessor<Flux<Frame>> streamInit = MonoProcessor.create();
     final MonoProcessor<Flux<Frame>> streamZero = MonoProcessor.create();
     final MonoProcessor<Flux<Frame>> server = MonoProcessor.create();
     final MonoProcessor<Flux<Frame>> client = MonoProcessor.create();
 
-    source = plugins.applyConnection(Type.SOURCE, source);
+    source = interceptors.interceptConnection(Type.SOURCE, source);
     initConnection =
-        plugins.applyConnection(Type.INIT, new InternalDuplexConnection(source, streamInit));
+        interceptors.interceptConnection(
+            Type.INIT, new InternalDuplexConnection(source, streamInit));
     streamZeroConnection =
-        plugins.applyConnection(Type.STREAM_ZERO, new InternalDuplexConnection(source, streamZero));
+        interceptors.interceptConnection(
+            Type.STREAM_ZERO, new InternalDuplexConnection(source, streamZero));
     serverConnection =
-        plugins.applyConnection(Type.SERVER, new InternalDuplexConnection(source, server));
+        interceptors.interceptConnection(Type.SERVER, new InternalDuplexConnection(source, server));
     clientConnection =
-        plugins.applyConnection(Type.CLIENT, new InternalDuplexConnection(source, client));
+        interceptors.interceptConnection(Type.CLIENT, new InternalDuplexConnection(source, client));
 
     source
         .receive()

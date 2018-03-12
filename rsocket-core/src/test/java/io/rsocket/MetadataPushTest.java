@@ -1,7 +1,7 @@
 package io.rsocket;
 
+import io.rsocket.interceptors.InterceptorRegistry;
 import io.rsocket.internal.ConnectionDemux;
-import io.rsocket.plugins.PluginRegistry;
 import io.rsocket.test.util.LocalDuplexConnection;
 import io.rsocket.util.PayloadImpl;
 import java.util.function.Function;
@@ -30,7 +30,7 @@ public class MetadataPushTest {
     DuplexConnection conn =
         connF.apply(
             new ConnectionDemux(
-                new LocalDuplexConnection(connName, sender, receiver), new PluginRegistry()));
+                new LocalDuplexConnection(connName, sender, receiver), new InterceptorRegistry()));
 
     String metadata = "metadata";
     MonoProcessor<Void> completeSignal = MonoProcessor.create();

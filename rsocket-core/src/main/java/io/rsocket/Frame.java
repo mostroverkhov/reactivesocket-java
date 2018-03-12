@@ -345,6 +345,10 @@ public class Frame implements ByteBufHolder {
       return SetupFrameFlyweight.version(frame.content);
     }
 
+    public static int currentVersion() {
+      return SetupFrameFlyweight.CURRENT_VERSION;
+    }
+
     public static int keepaliveInterval(final Frame frame) {
       ensureFrameType(FrameType.SETUP, frame);
       return SetupFrameFlyweight.keepaliveInterval(frame.content);

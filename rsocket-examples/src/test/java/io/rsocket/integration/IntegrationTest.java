@@ -27,8 +27,8 @@ import io.rsocket.AbstractRSocket;
 import io.rsocket.Payload;
 import io.rsocket.RSocket;
 import io.rsocket.RSocketFactory;
-import io.rsocket.plugins.DuplexConnectionInterceptor;
-import io.rsocket.plugins.RSocketInterceptor;
+import io.rsocket.interceptors.DuplexConnectionInterceptor;
+import io.rsocket.interceptors.RSocketInterceptor;
 import io.rsocket.test.TestSubscriber;
 import io.rsocket.transport.netty.client.TcpClientTransport;
 import io.rsocket.transport.netty.server.NettyContextCloseable;
@@ -95,8 +95,8 @@ public class IntegrationTest {
 
     server =
         RSocketFactory.receive()
-            .addServerPlugin(serverPlugin)
-            .addConnectionPlugin(connectionPlugin)
+            .addHandlerInterceptor(serverPlugin)
+            .addConnectionInterceptor(connectionPlugin)
             .acceptor(
                 (setup, sendingSocket) -> {
                   sendingSocket
@@ -124,8 +124,8 @@ public class IntegrationTest {
 
     client =
         RSocketFactory.connect()
-            .addClientPlugin(clientPlugin)
-            .addConnectionPlugin(connectionPlugin)
+            .addRequesterInterceptor(clientPlugin)
+            .addConnectionInterceptor(connectionPlugin)
             .transport(TcpClientTransport.create(server.address()))
             .start()
             .block();
