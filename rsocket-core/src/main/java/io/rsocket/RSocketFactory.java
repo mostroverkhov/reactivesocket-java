@@ -16,7 +16,6 @@
 
 package io.rsocket;
 
-import static io.rsocket.interceptors.DuplexConnectionInterceptor.Type.STREAM_ZERO;
 import static io.rsocket.interceptors.InterceptorFactory.InterceptorSet;
 
 import io.rsocket.exceptions.InvalidSetupException;
@@ -26,11 +25,8 @@ import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
 import io.rsocket.interceptors.*;
 import io.rsocket.internal.ConnectionDemux;
-import io.rsocket.internal.ZeroErrorHandlingConnection;
-import io.rsocket.keepalive.CloseOnKeepAliveTimeout;
-import io.rsocket.keepalive.KeepAliveRequesterConnection;
-import io.rsocket.keepalive.KeepAliveResponderConnection;
-import io.rsocket.keepalive.KeepAlives;
+import io.rsocket.internal.ConnectionErrorInterceptor;
+import io.rsocket.keepalive.*;
 import io.rsocket.lease.LeaseConnectionRef;
 import io.rsocket.lease.LeaseSupport;
 import io.rsocket.transport.ClientTransport;
@@ -214,35 +210,9 @@ public class RSocketFactory {
         this.transportClient = transportClient;
         this.interceptorFactory = ClientRSocketFactory.this.interceptorFactory.copy();
 
-        interceptorFactory.addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
-
-        interceptorFactory.addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(
-                STREAM_ZERO,
-                conn -> {
-                  KeepAliveRequesterConnection keepAliveRequesterConnection =
-                      new KeepAliveRequesterConnection(
-                          conn,
-                          keepAlivePeriod,
-                          keepAlivePeriodsTimeout,
-                          keepAlivePayloadSupplier,
-                          errorConsumer);
-                  keepAlivesConsumer.accept(
-                      new KeepAlives(
-                          keepAliveRequesterConnection.keepAliveAvailable(),
-                          keepAliveRequesterConnection.keepAliveMissing(),
-                          keepAliveRequesterConnection.close()));
-
-                  return keepAliveRequesterConnection;
-                }));
-
-        interceptorFactory.addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
-
-        leaseConsumer.ifPresent(
-            leaseConsumer ->
-                interceptorFactory.addInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
+        enableKeepAliveSupport();
+        enableConnectionErrorHandlingSupport();
+        enableLeaseSupport();
       }
 
       @Override
@@ -296,6 +266,29 @@ public class RSocketFactory {
                             .then(wrappedRSocketRequester);
                       });
                 });
+      }
+
+      private void enableConnectionErrorHandlingSupport() {
+        interceptorFactory.addConnectionInterceptor(new ConnectionErrorInterceptor());
+      }
+
+      private void enableLeaseSupport() {
+        leaseConsumer.ifPresent(
+            leaseConsumer ->
+                interceptorFactory.addInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
+      }
+
+      private void enableKeepAliveSupport() {
+
+        interceptorFactory.addConnectionInterceptor(new KeepAliveResponderInterceptor());
+
+        interceptorFactory.addConnectionInterceptor(
+            new KeepAliveRequesterInterceptor(
+                keepAlivePeriod,
+                keepAlivePeriodsTimeout,
+                keepAlivePayloadSupplier,
+                errorConsumer,
+                keepAlivesConsumer));
       }
     }
   }
@@ -364,17 +357,9 @@ public class RSocketFactory {
         this.transportServer = transportServer;
         this.interceptorFactory = ServerRSocketFactory.this.interceptorFactory.copy();
 
-        interceptorFactory.addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
-        interceptorFactory.addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
-
-        Supplier<InterceptorSet> leaseInterceptor =
-            leaseControlConsumer
-                .map(LeaseSupport::forServer)
-                .orElseGet(LeaseSupport::missingForServer);
-
-        interceptorFactory.addInterceptorSet(leaseInterceptor);
+        enableKeepAliveSupport();
+        enableConnectionErrorHandlingSupport();
+        enableLeaseSupport();
       }
 
       @Override
@@ -443,6 +428,23 @@ public class RSocketFactory {
             .asStreamZeroConnection()
             .sendOne(Frame.Error.from(0, error))
             .then(multiplexer.close());
+      }
+
+      private void enableConnectionErrorHandlingSupport() {
+        interceptorFactory.addConnectionInterceptor(new ConnectionErrorInterceptor());
+      }
+
+      private void enableKeepAliveSupport() {
+        interceptorFactory.addConnectionInterceptor(new KeepAliveResponderInterceptor());
+      }
+
+      private void enableLeaseSupport() {
+        Supplier<InterceptorSet> leaseInterceptor =
+            leaseControlConsumer
+                .map(LeaseSupport::forServer)
+                .orElseGet(LeaseSupport::missingForServer);
+
+        interceptorFactory.addInterceptorSet(leaseInterceptor);
       }
     }
   }
