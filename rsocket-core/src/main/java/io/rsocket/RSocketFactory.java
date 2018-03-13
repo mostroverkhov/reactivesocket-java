@@ -17,7 +17,7 @@
 package io.rsocket;
 
 import static io.rsocket.interceptors.DuplexConnectionInterceptor.Type.STREAM_ZERO;
-import static io.rsocket.interceptors.InterceptorFactory.Interceptor;
+import static io.rsocket.interceptors.InterceptorFactory.InterceptorSet;
 
 import io.rsocket.exceptions.InvalidSetupException;
 import io.rsocket.exceptions.SetupException;
@@ -68,10 +68,6 @@ public class RSocketFactory {
     Mono<T> start();
   }
 
-  public interface SetupPayload<T> {
-    T setupPayload(Payload payload);
-  }
-
   public interface Acceptor<T, A> {
     T acceptor(Supplier<A> acceptor);
 
@@ -96,50 +92,16 @@ public class RSocketFactory {
     }
   }
 
-  public interface Fragmentation<T> {
-    T fragment(int mtu);
-  }
-
-  public interface ErrorConsumer<T> {
-    T errorConsumer(Consumer<Throwable> errorConsumer);
-  }
-
-  public interface KeepAlive<T> {
-
-    T keepAlive(
-        Duration period,
-        int periodsTimeout,
-        Supplier<ByteBuffer> frameDataSupplier,
-        Consumer<KeepAlives> consumer);
-
-    default T keepAlive(Duration period, int periodsTimeout, Consumer<KeepAlives> consumer) {
-      return keepAlive(period, periodsTimeout, () -> Frame.NULL_BYTEBUFFER, consumer);
-    }
-  }
-
-  public interface MimeType<T> {
-    T mimeType(String metadataMimeType, String dataMimeType);
-
-    T dataMimeType(String dataMimeType);
-
-    T metadataMimeType(String metadataMimeType);
-  }
-
   public static class ClientRSocketFactory
       implements Acceptor<ClientTransportAcceptor, Function<RSocket, RSocket>>,
-          ClientTransportAcceptor,
-          KeepAlive<ClientRSocketFactory>,
-          MimeType<ClientRSocketFactory>,
-          Fragmentation<ClientRSocketFactory>,
-          ErrorConsumer<ClientRSocketFactory>,
-          SetupPayload<ClientRSocketFactory> {
+          ClientTransportAcceptor {
 
     protected Supplier<Function<RSocket, RSocket>> acceptor =
         () -> rSocket -> new AbstractRSocket() {};
-    protected Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
-    private int mtu = 0;
-    protected final InterceptorFactory interceptorFactory = new InterceptorFactory();
-    protected int flags = SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION;
+    private Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
+    private int fragmentationMtu = 0;
+    private final InterceptorFactory interceptorFactory = new InterceptorFactory();
+    private int flags = SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION;
 
     private Payload setupPayload = PayloadImpl.EMPTY;
 
@@ -147,44 +109,47 @@ public class RSocketFactory {
     private Optional<Consumer<LeaseConnectionRef>> leaseConsumer = Optional.empty();
 
     private int keepAlivePeriodsTimeout = 3;
-    private Supplier<ByteBuffer> frameDataFactory = () -> Frame.NULL_BYTEBUFFER;
+    private Supplier<ByteBuffer> keepAlivePayloadSupplier = () -> Frame.NULL_BYTEBUFFER;
     private Consumer<KeepAlives> keepAlivesConsumer = new CloseOnKeepAliveTimeout(errorConsumer);
 
     private String metadataMimeType = "application/binary";
     private String dataMimeType = "application/binary";
 
     public ClientRSocketFactory addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
-      this.interceptorFactory.interceptor(() -> new Interceptor().connection(interceptor));
+      this.interceptorFactory.addConnectionInterceptor(interceptor);
       return this;
     }
 
     public ClientRSocketFactory addRequesterInterceptor(RSocketInterceptor interceptor) {
-      this.interceptorFactory.interceptor(() -> new Interceptor().requesterRSocket(interceptor));
+      this.interceptorFactory.addRequesterInterceptor(interceptor);
       return this;
     }
 
     public ClientRSocketFactory addHandlerInterceptor(RSocketInterceptor interceptor) {
-      this.interceptorFactory.interceptor(() -> new Interceptor().handlerRSocket(interceptor));
+      this.interceptorFactory.addHandlerInterceptor(interceptor);
       return this;
     }
 
-    protected ClientRSocketFactory addInterceptor(Supplier<Interceptor> interceptor) {
-      this.interceptorFactory.interceptor(interceptor);
+    public ClientRSocketFactory addInterceptorSet(Supplier<InterceptorSet> interceptor) {
+      this.interceptorFactory.addInterceptorSet(interceptor);
       return this;
     }
 
-    @Override
     public ClientRSocketFactory keepAlive(
         Duration keepAlivePeriod,
         int keepAlivePeriodsTimeout,
-        Supplier<ByteBuffer> frameDataFactory,
+        Supplier<ByteBuffer> keepAlivePayloadSupplier,
         Consumer<KeepAlives> keepAlivesConsumer) {
       this.keepAlivePeriod = keepAlivePeriod;
       this.keepAlivePeriodsTimeout = keepAlivePeriodsTimeout;
-      this.frameDataFactory = frameDataFactory;
+      this.keepAlivePayloadSupplier = keepAlivePayloadSupplier;
       this.keepAlivesConsumer = keepAlivesConsumer;
       return this;
     }
+
+   public ClientRSocketFactory keepAlive(Duration period, int periodsTimeout, Consumer<KeepAlives> consumer) {
+      return keepAlive(period, periodsTimeout, () -> Frame.NULL_BYTEBUFFER, consumer);
+   }
 
     public ClientRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {
       this.leaseConsumer = Optional.of(leaseControlConsumer);
@@ -198,20 +163,17 @@ public class RSocketFactory {
       return this;
     }
 
-    @Override
     public ClientRSocketFactory mimeType(String metadataMimeType, String dataMimeType) {
       this.dataMimeType = dataMimeType;
       this.metadataMimeType = metadataMimeType;
       return this;
     }
 
-    @Override
     public ClientRSocketFactory dataMimeType(String dataMimeType) {
       this.dataMimeType = dataMimeType;
       return this;
     }
 
-    @Override
     public ClientRSocketFactory metadataMimeType(String metadataMimeType) {
       this.metadataMimeType = metadataMimeType;
       return this;
@@ -228,19 +190,16 @@ public class RSocketFactory {
       return StartClient::new;
     }
 
-    @Override
     public ClientRSocketFactory fragment(int mtu) {
-      this.mtu = mtu;
+      this.fragmentationMtu = mtu;
       return this;
     }
 
-    @Override
     public ClientRSocketFactory errorConsumer(Consumer<Throwable> errorConsumer) {
       this.errorConsumer = errorConsumer;
       return this;
     }
 
-    @Override
     public ClientRSocketFactory setupPayload(Payload payload) {
       this.setupPayload = payload;
       return this;
@@ -248,38 +207,40 @@ public class RSocketFactory {
 
     protected class StartClient implements Start<RSocket> {
       private final Supplier<ClientTransport> transportClient;
-
+      private final InterceptorFactory interceptorFactory;
       StartClient(Supplier<ClientTransport> transportClient) {
         this.transportClient = transportClient;
+        this.interceptorFactory = ClientRSocketFactory.this.interceptorFactory.copy();
 
-        addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
+        interceptorFactory.addConnectionInterceptor(
+                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
 
-        addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(
-                STREAM_ZERO,
-                conn -> {
-                  KeepAliveRequesterConnection keepAliveRequesterConnection =
-                      new KeepAliveRequesterConnection(
-                          conn,
-                          keepAlivePeriod,
-                          keepAlivePeriodsTimeout,
-                          frameDataFactory,
-                          errorConsumer);
-                  keepAlivesConsumer.accept(
-                      new KeepAlives(
-                          keepAliveRequesterConnection.keepAliveAvailable(),
-                          keepAliveRequesterConnection.keepAliveMissing(),
-                          keepAliveRequesterConnection.close()));
+        interceptorFactory.addConnectionInterceptor(
+                new PerTypeDuplexConnectionInterceptor(
+                        STREAM_ZERO,
+                        conn -> {
+                          KeepAliveRequesterConnection keepAliveRequesterConnection =
+                                  new KeepAliveRequesterConnection(
+                                          conn,
+                                          keepAlivePeriod,
+                                          keepAlivePeriodsTimeout,
+                                          keepAlivePayloadSupplier,
+                                          errorConsumer);
+                          keepAlivesConsumer.accept(
+                                  new KeepAlives(
+                                          keepAliveRequesterConnection.keepAliveAvailable(),
+                                          keepAliveRequesterConnection.keepAliveMissing(),
+                                          keepAliveRequesterConnection.close()));
 
-                  return keepAliveRequesterConnection;
-                }));
+                          return keepAliveRequesterConnection;
+                        }));
 
-        addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+        interceptorFactory.addConnectionInterceptor(
+                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
 
         leaseConsumer.ifPresent(
-            leaseConsumer -> addInterceptor(LeaseSupport.forClient(leaseConsumer)));
+            leaseConsumer -> interceptorFactory
+                    .addInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
       }
 
       @Override
@@ -299,8 +260,8 @@ public class RSocketFactory {
                           dataMimeType,
                           setupPayload);
 
-                  if (mtu > 0) {
-                    connection = new FragmentationDuplexConnection(connection, mtu);
+                  if (fragmentationMtu > 0) {
+                    connection = new FragmentationDuplexConnection(connection, fragmentationMtu);
                   }
                   ConnectionDemux connectionDemux = new ConnectionDemux(connection, interceptors);
 
@@ -338,9 +299,7 @@ public class RSocketFactory {
   }
 
   public static class ServerRSocketFactory
-      implements Acceptor<ServerTransportAcceptor, SocketAcceptor>,
-          Fragmentation<ServerRSocketFactory>,
-          ErrorConsumer<ServerRSocketFactory> {
+      implements Acceptor<ServerTransportAcceptor, SocketAcceptor> {
 
     private Supplier<SocketAcceptor> acceptor;
     private Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
@@ -349,23 +308,23 @@ public class RSocketFactory {
     private Optional<Consumer<LeaseConnectionRef>> leaseControlConsumer = Optional.empty();
 
     public ServerRSocketFactory addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
-      this.interceptorFactory.interceptor(() -> new Interceptor().connection(interceptor));
+      this.interceptorFactory.addConnectionInterceptor(interceptor);
       return this;
     }
 
     public ServerRSocketFactory addRequesterInterceptor(RSocketInterceptor interceptor) {
-      this.interceptorFactory.interceptor(() -> new Interceptor().requesterRSocket(interceptor));
+      this.interceptorFactory.addRequesterInterceptor(interceptor);
       return this;
     }
 
     public ServerRSocketFactory addHandlerInterceptor(RSocketInterceptor interceptor) {
-      this.interceptorFactory.interceptor(() -> new Interceptor().handlerRSocket(interceptor));
+      this.interceptorFactory.addHandlerInterceptor(interceptor);
 
       return this;
     }
 
-    protected ServerRSocketFactory addInterceptor(Supplier<Interceptor> interceptor) {
-      this.interceptorFactory.interceptor(interceptor);
+    protected ServerRSocketFactory addInterceptor(Supplier<InterceptorSet> interceptor) {
+      this.interceptorFactory.addInterceptorSet(interceptor);
       return this;
     }
 
@@ -385,33 +344,34 @@ public class RSocketFactory {
       return ServerStart::new;
     }
 
-    @Override
     public ServerRSocketFactory fragment(int mtu) {
       this.mtu = mtu;
       return this;
     }
 
-    @Override
     public ServerRSocketFactory errorConsumer(Consumer<Throwable> errorConsumer) {
       this.errorConsumer = errorConsumer;
       return this;
     }
 
-    protected class ServerStart<T extends Closeable> implements Start<T> {
+    private class ServerStart<T extends Closeable> implements Start<T> {
       private final Supplier<ServerTransport<T>> transportServer;
+      private final InterceptorFactory interceptorFactory;
 
       ServerStart(Supplier<ServerTransport<T>> transportServer) {
         this.transportServer = transportServer;
+        this.interceptorFactory = ServerRSocketFactory.this.interceptorFactory.copy();
 
-        addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
-        addConnectionInterceptor(
-            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+        interceptorFactory.addConnectionInterceptor(
+                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
+        interceptorFactory.addConnectionInterceptor(
+                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
 
-        addInterceptor(
-            leaseControlConsumer
+        Supplier<InterceptorSet> leaseInterceptor = leaseControlConsumer
                 .map(LeaseSupport::forServer)
-                .orElseGet(LeaseSupport::missingForServer));
+                .orElseGet(LeaseSupport::missingForServer);
+
+        interceptorFactory.addInterceptorSet(leaseInterceptor);
       }
 
       @Override

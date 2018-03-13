@@ -6,19 +6,19 @@ import java.util.function.Supplier;
 
 public class LeaseSupport {
 
-  public static Supplier<InterceptorFactory.Interceptor> missingForServer() {
+  public static Supplier<InterceptorFactory.InterceptorSet> missingForServer() {
     /*handles case when client requests Lease but server does not support it*/
     return () ->
-        new InterceptorFactory.Interceptor().connection(new ServerLeaseMissingInterceptor());
+        new InterceptorFactory.InterceptorSet().connection(new ServerLeaseMissingInterceptor());
   }
 
-  public static Supplier<InterceptorFactory.Interceptor> forServer(
+  public static Supplier<InterceptorFactory.InterceptorSet> forServer(
       Consumer<LeaseConnectionRef> leaseHandle) {
     return () -> {
       LeaseManager sender = new LeaseManager("server sender");
       LeaseManager receiver = new LeaseManager("server receiver");
       LeaseContext leaseContext = new LeaseContext();
-      return new InterceptorFactory.Interceptor()
+      return new InterceptorFactory.InterceptorSet()
           /*requester rsocket is Lease aware*/
           .requesterRSocket(new LeaseInterceptor("server requester", sender))
           /*handler rsocket is Lease aware*/
@@ -30,13 +30,13 @@ public class LeaseSupport {
     };
   }
 
-  public static Supplier<InterceptorFactory.Interceptor> forClient(
+  public static Supplier<InterceptorFactory.InterceptorSet> forClient(
       Consumer<LeaseConnectionRef> leaseHandle) {
     return () -> {
       LeaseManager sender = new LeaseManager("client sender");
       LeaseManager receiver = new LeaseManager("client receiver");
 
-      return new InterceptorFactory.Interceptor()
+      return new InterceptorFactory.InterceptorSet()
           /*requester rsocket is Lease aware*/
           .requesterRSocket(new LeaseInterceptor("client requester", sender))
           /*handler rsocket is Lease aware*/

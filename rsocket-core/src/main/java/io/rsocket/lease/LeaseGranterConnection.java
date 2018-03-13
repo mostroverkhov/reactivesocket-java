@@ -11,13 +11,13 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-class LeaseConnection extends DuplexConnectionProxy implements LeaseGranter {
+class LeaseGranterConnection extends DuplexConnectionProxy implements LeaseGranter {
   private static final LeaseContext alwaysEnabled = new LeaseContext();
   private final LeaseContext leaseContext;
   private final LeaseManager sendManager;
   private final LeaseManager receiveManager;
 
-  public LeaseConnection(
+  public LeaseGranterConnection(
       LeaseContext leaseContext,
       DuplexConnection source,
       LeaseManager sendManager,
@@ -28,7 +28,7 @@ class LeaseConnection extends DuplexConnectionProxy implements LeaseGranter {
     this.receiveManager = receiveManager;
   }
 
-  public LeaseConnection(
+  public LeaseGranterConnection(
       DuplexConnection source, LeaseManager sendManager, LeaseManager receiveManager) {
     this(alwaysEnabled, source, sendManager, receiveManager);
   }

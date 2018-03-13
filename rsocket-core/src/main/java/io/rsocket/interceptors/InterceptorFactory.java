@@ -5,10 +5,36 @@ import java.util.List;
 import java.util.function.Supplier;
 
 public class InterceptorFactory {
-  private final List<Supplier<Interceptor>> interceptors = new ArrayList<>();
+  private final List<Supplier<InterceptorSet>> interceptors = new ArrayList<>();
 
-  public InterceptorFactory interceptor(Supplier<Interceptor> interceptor) {
+  public InterceptorFactory() {
+  }
+
+  private InterceptorFactory(InterceptorFactory interceptorFactory) {
+    interceptors.addAll(interceptorFactory.interceptors);
+  }
+
+  public InterceptorFactory copy() {
+    return new InterceptorFactory(this);
+  }
+
+  public InterceptorFactory addInterceptorSet(Supplier<InterceptorSet> interceptor) {
     interceptors.add(interceptor);
+    return this;
+  }
+
+  public InterceptorFactory addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
+    addInterceptorSet(() -> new InterceptorSet().connection(interceptor));
+    return this;
+  }
+
+  public InterceptorFactory addRequesterInterceptor(RSocketInterceptor interceptor) {
+    addInterceptorSet(() -> new InterceptorSet().requesterRSocket(interceptor));
+    return this;
+  }
+
+  public InterceptorFactory addHandlerInterceptor(RSocketInterceptor interceptor) {
+    addInterceptorSet(() -> new InterceptorSet().handlerRSocket(interceptor));
     return this;
   }
 
@@ -16,30 +42,30 @@ public class InterceptorFactory {
     InterceptorRegistry registry = new InterceptorRegistry();
     interceptors.forEach(
         interceptorF -> {
-          Interceptor interceptor = interceptorF.get();
-          interceptor.connInterceptors.forEach(registry::addConnectionInterceptor);
-          interceptor.requesterInterceptors.forEach(registry::addRequesterInterceptor);
-          interceptor.handlerInterceptors.forEach(registry::addHandlerInterceptor);
+          InterceptorSet interceptorSet = interceptorF.get();
+          interceptorSet.connInterceptors.forEach(registry::addConnectionInterceptor);
+          interceptorSet.requesterInterceptors.forEach(registry::addRequesterInterceptor);
+          interceptorSet.handlerInterceptors.forEach(registry::addHandlerInterceptor);
         });
     return registry;
   }
 
-  public static class Interceptor {
+  public static class InterceptorSet {
     private final List<DuplexConnectionInterceptor> connInterceptors = new ArrayList<>();
     private final List<RSocketInterceptor> requesterInterceptors = new ArrayList<>();
     private final List<RSocketInterceptor> handlerInterceptors = new ArrayList<>();
 
-    public Interceptor connection(DuplexConnectionInterceptor interceptor) {
+    public InterceptorSet connection(DuplexConnectionInterceptor interceptor) {
       connInterceptors.add(interceptor);
       return this;
     }
 
-    public Interceptor requesterRSocket(RSocketInterceptor interceptor) {
+    public InterceptorSet requesterRSocket(RSocketInterceptor interceptor) {
       requesterInterceptors.add(interceptor);
       return this;
     }
 
-    public Interceptor handlerRSocket(RSocketInterceptor interceptor) {
+    public InterceptorSet handlerRSocket(RSocketInterceptor interceptor) {
       handlerInterceptors.add(interceptor);
       return this;
     }

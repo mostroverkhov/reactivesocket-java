@@ -4,6 +4,8 @@ import io.rsocket.Payload;
 import io.rsocket.RSocket;
 import io.rsocket.util.RSocketProxy;
 import java.util.function.Function;
+import java.util.function.Supplier;
+
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -28,22 +30,22 @@ class LeaseRSocket extends RSocketProxy {
 
   @Override
   public Mono<Void> fireAndForget(Payload payload) {
-    return request(super.fireAndForget(payload), Mono::error);
+    return request(Mono::defer,super.fireAndForget(payload), Mono::error);
   }
 
   @Override
   public Mono<Payload> requestResponse(Payload payload) {
-    return request(super.requestResponse(payload), Mono::error);
+    return request(Mono::defer,super.requestResponse(payload), Mono::error);
   }
 
   @Override
   public Flux<Payload> requestStream(Payload payload) {
-    return request(super.requestStream(payload), Flux::error);
+    return request(Flux::defer,super.requestStream(payload), Flux::error);
   }
 
   @Override
   public Flux<Payload> requestChannel(Publisher<Payload> payloads) {
-    return request(super.requestChannel(payloads), Flux::error);
+    return request(Flux::defer,super.requestChannel(payloads), Flux::error);
   }
 
   @Override
@@ -51,18 +53,21 @@ class LeaseRSocket extends RSocketProxy {
     return Math.min(super.availability(), leaseManager.availability());
   }
 
-  private <K, T extends Publisher<K>> T request(
+  private <K, T extends Publisher<K>> T request(Function<Supplier<T>,T> defer,
       T actual, Function<? super Throwable, ? extends T> error) {
-    if (isEnabled()) {
-      try {
-        leaseManager.useLease();
+
+    return defer.apply(() ->{
+      if (isEnabled()) {
+        try {
+          leaseManager.useLease();
+          return actual;
+        } catch (Exception e) {
+          return error.apply(e);
+        }
+      } else {
         return actual;
-      } catch (Exception e) {
-        return error.apply(e);
       }
-    } else {
-      return actual;
-    }
+    });
   }
 
   @Override
