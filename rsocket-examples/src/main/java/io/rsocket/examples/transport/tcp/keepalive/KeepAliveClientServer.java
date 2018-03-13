@@ -1,12 +1,12 @@
 package io.rsocket.examples.transport.tcp.keepalive;
 
+import static io.rsocket.interceptors.DuplexConnectionInterceptor.*;
 import static io.rsocket.keepalive.KeepAlive.KeepAliveAvailable;
 import static io.rsocket.keepalive.KeepAlive.KeepAliveMissing;
-import static io.rsocket.plugins.DuplexConnectionInterceptor.*;
 
 import io.rsocket.*;
+import io.rsocket.interceptors.PerTypeDuplexConnectionInterceptor;
 import io.rsocket.keepalive.KeepAlives;
-import io.rsocket.plugins.PerTypeDuplexConnectionInterceptor;
 import io.rsocket.transport.netty.client.TcpClientTransport;
 import io.rsocket.transport.netty.server.NettyContextCloseable;
 import io.rsocket.transport.netty.server.TcpServerTransport;
@@ -30,7 +30,7 @@ public class KeepAliveClientServer {
   public static void main(String[] args) {
     NettyContextCloseable nettyContextCloseable =
         RSocketFactory.receive()
-            .addConnectionPlugin(
+            .addConnectionInterceptor(
                 new PerTypeDuplexConnectionInterceptor(Type.SOURCE, FlakyConnection::new))
             .acceptor(
                 (setup, reactiveSocket) ->

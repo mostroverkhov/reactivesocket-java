@@ -14,39 +14,33 @@
  *  limitations under the License.
  */
 
-package io.rsocket.plugins;
+package io.rsocket.interceptors;
 
 import io.rsocket.DuplexConnection;
 import io.rsocket.RSocket;
 import java.util.ArrayList;
 import java.util.List;
 
-public class PluginRegistry {
-  private List<DuplexConnectionInterceptor> connections = new ArrayList<>();
-  private List<RSocketInterceptor> requesters = new ArrayList<>();
-  private List<RSocketInterceptor> responders = new ArrayList<>();
+public class InterceptorRegistry {
+  private final List<DuplexConnectionInterceptor> connections = new ArrayList<>();
+  private final List<RSocketInterceptor> requesters = new ArrayList<>();
+  private final List<RSocketInterceptor> handlers = new ArrayList<>();
 
-  public PluginRegistry() {}
+  public InterceptorRegistry() {}
 
-  public PluginRegistry(PluginRegistry defaults) {
-    this.connections.addAll(defaults.connections);
-    this.requesters.addAll(defaults.requesters);
-    this.responders.addAll(defaults.responders);
-  }
-
-  public void addConnectionPlugin(DuplexConnectionInterceptor interceptor) {
+  public void addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
     connections.add(interceptor);
   }
 
-  public void addClientPlugin(RSocketInterceptor interceptor) {
+  public void addRequesterInterceptor(RSocketInterceptor interceptor) {
     requesters.add(interceptor);
   }
 
-  public void addServerPlugin(RSocketInterceptor interceptor) {
-    responders.add(interceptor);
+  public void addHandlerInterceptor(RSocketInterceptor interceptor) {
+    handlers.add(interceptor);
   }
 
-  public RSocket applyClient(RSocket rSocket) {
+  public RSocket interceptRequester(RSocket rSocket) {
     for (RSocketInterceptor i : requesters) {
       rSocket = i.apply(rSocket);
     }
@@ -54,20 +48,18 @@ public class PluginRegistry {
     return rSocket;
   }
 
-  public RSocket applyServer(RSocket rSocket) {
-    for (RSocketInterceptor i : responders) {
+  public RSocket interceptHandler(RSocket rSocket) {
+    for (RSocketInterceptor i : handlers) {
       rSocket = i.apply(rSocket);
     }
-
     return rSocket;
   }
 
-  public DuplexConnection applyConnection(
+  public DuplexConnection interceptConnection(
       DuplexConnectionInterceptor.Type type, DuplexConnection connection) {
     for (DuplexConnectionInterceptor i : connections) {
       connection = i.apply(type, connection);
     }
-
     return connection;
   }
 }

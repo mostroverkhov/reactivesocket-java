@@ -16,25 +16,29 @@
 
 package io.rsocket;
 
-import static io.rsocket.plugins.DuplexConnectionInterceptor.Type.STREAM_ZERO;
+import static io.rsocket.interceptors.DuplexConnectionInterceptor.Type.STREAM_ZERO;
+import static io.rsocket.interceptors.InterceptorFactory.Interceptor;
 
 import io.rsocket.exceptions.InvalidSetupException;
 import io.rsocket.exceptions.SetupException;
 import io.rsocket.fragmentation.FragmentationDuplexConnection;
 import io.rsocket.frame.SetupFrameFlyweight;
 import io.rsocket.frame.VersionFlyweight;
+import io.rsocket.interceptors.*;
 import io.rsocket.internal.ConnectionDemux;
 import io.rsocket.internal.ZeroErrorHandlingConnection;
 import io.rsocket.keepalive.CloseOnKeepAliveTimeout;
 import io.rsocket.keepalive.KeepAliveRequesterConnection;
 import io.rsocket.keepalive.KeepAliveResponderConnection;
 import io.rsocket.keepalive.KeepAlives;
-import io.rsocket.plugins.*;
+import io.rsocket.lease.LeaseConnectionRef;
+import io.rsocket.lease.LeaseSupport;
 import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
 import io.rsocket.util.PayloadImpl;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -134,12 +138,14 @@ public class RSocketFactory {
         () -> rSocket -> new AbstractRSocket() {};
     protected Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
     private int mtu = 0;
-    private PluginRegistry plugins = new PluginRegistry(Plugins.defaultPlugins());
+    protected final InterceptorFactory interceptorFactory = new InterceptorFactory();
     protected int flags = SetupFrameFlyweight.FLAGS_STRICT_INTERPRETATION;
 
     private Payload setupPayload = PayloadImpl.EMPTY;
 
     private Duration keepAlivePeriod = Duration.ofMillis(500);
+    private Optional<Consumer<LeaseConnectionRef>> leaseConsumer = Optional.empty();
+
     private int keepAlivePeriodsTimeout = 3;
     private Supplier<ByteBuffer> frameDataFactory = () -> Frame.NULL_BYTEBUFFER;
     private Consumer<KeepAlives> keepAlivesConsumer = new CloseOnKeepAliveTimeout(errorConsumer);
@@ -147,18 +153,23 @@ public class RSocketFactory {
     private String metadataMimeType = "application/binary";
     private String dataMimeType = "application/binary";
 
-    public ClientRSocketFactory addConnectionPlugin(DuplexConnectionInterceptor interceptor) {
-      plugins.addConnectionPlugin(interceptor);
+    public ClientRSocketFactory addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
+      this.interceptorFactory.interceptor(() -> new Interceptor().connection(interceptor));
       return this;
     }
 
-    public ClientRSocketFactory addClientPlugin(RSocketInterceptor interceptor) {
-      plugins.addClientPlugin(interceptor);
+    public ClientRSocketFactory addRequesterInterceptor(RSocketInterceptor interceptor) {
+      this.interceptorFactory.interceptor(() -> new Interceptor().requesterRSocket(interceptor));
       return this;
     }
 
-    public ClientRSocketFactory addServerPlugin(RSocketInterceptor interceptor) {
-      plugins.addServerPlugin(interceptor);
+    public ClientRSocketFactory addHandlerInterceptor(RSocketInterceptor interceptor) {
+      this.interceptorFactory.interceptor(() -> new Interceptor().handlerRSocket(interceptor));
+      return this;
+    }
+
+    protected ClientRSocketFactory addInterceptor(Supplier<Interceptor> interceptor) {
+      this.interceptorFactory.interceptor(interceptor);
       return this;
     }
 
@@ -172,6 +183,18 @@ public class RSocketFactory {
       this.keepAlivePeriodsTimeout = keepAlivePeriodsTimeout;
       this.frameDataFactory = frameDataFactory;
       this.keepAlivesConsumer = keepAlivesConsumer;
+      return this;
+    }
+
+    public ClientRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {
+      this.leaseConsumer = Optional.of(leaseControlConsumer);
+      flags |= SetupFrameFlyweight.FLAGS_WILL_HONOR_LEASE;
+      return this;
+    }
+
+    public ClientRSocketFactory disableLease() {
+      this.leaseConsumer = Optional.empty();
+      flags &= ~SetupFrameFlyweight.FLAGS_WILL_HONOR_LEASE;
       return this;
     }
 
@@ -229,10 +252,10 @@ public class RSocketFactory {
       StartClient(Supplier<ClientTransport> transportClient) {
         this.transportClient = transportClient;
 
-        addConnectionPlugin(
+        addConnectionInterceptor(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
 
-        addConnectionPlugin(
+        addConnectionInterceptor(
             new PerTypeDuplexConnectionInterceptor(
                 STREAM_ZERO,
                 conn -> {
@@ -252,8 +275,11 @@ public class RSocketFactory {
                   return keepAliveRequesterConnection;
                 }));
 
-        addConnectionPlugin(
+        addConnectionInterceptor(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+
+        leaseConsumer.ifPresent(
+            leaseConsumer -> addInterceptor(LeaseSupport.forClient(leaseConsumer)));
       }
 
       @Override
@@ -263,6 +289,7 @@ public class RSocketFactory {
             .connect()
             .flatMap(
                 connection -> {
+                  InterceptorRegistry interceptors = interceptorFactory.create();
                   Frame setupFrame =
                       Frame.Setup.from(
                           flags,
@@ -275,33 +302,35 @@ public class RSocketFactory {
                   if (mtu > 0) {
                     connection = new FragmentationDuplexConnection(connection, mtu);
                   }
-                  ConnectionDemux multiplexer = new ConnectionDemux(connection, plugins);
+                  ConnectionDemux connectionDemux = new ConnectionDemux(connection, interceptors);
 
                   RSocketRequester rSocketRequester =
                       new RSocketRequester(
-                          multiplexer.asClientConnection(),
+                          connectionDemux.asClientConnection(),
                           errorConsumer,
                           StreamIdSupplier.clientSupplier());
 
-                  Mono<RSocket> wrappedRSocketClient =
-                      Mono.just(rSocketRequester).map(plugins::applyClient);
+                  Mono<RSocket> wrappedRSocketRequester =
+                      Mono.just(rSocketRequester).map(interceptors::interceptRequester);
+
                   DuplexConnection finalConnection = connection;
 
-                  return wrappedRSocketClient.flatMap(
-                      wrappedClientRSocket -> {
-                        RSocket unwrappedServerSocket = acceptor.get().apply(wrappedClientRSocket);
-                        Mono<RSocket> wrappedRSocketServer =
-                            Mono.just(unwrappedServerSocket).map(plugins::applyServer);
+                  return wrappedRSocketRequester.flatMap(
+                      wrappedRequester -> {
+                        RSocket handlerRSocket = acceptor.get().apply(wrappedRequester);
 
-                        return wrappedRSocketServer
+                        Mono<RSocket> wrappedHandlerRSocket =
+                            Mono.just(handlerRSocket).map(interceptors::interceptHandler);
+
+                        return wrappedHandlerRSocket
                             .doOnNext(
-                                rSocket ->
+                                handler ->
                                     new RSocketResponder(
-                                        multiplexer.asZeroAndServerConnection(),
-                                        rSocket,
+                                        connectionDemux.asZeroAndServerConnection(),
+                                        handler,
                                         errorConsumer))
                             .then(finalConnection.sendOne(setupFrame))
-                            .then(wrappedRSocketClient);
+                            .then(wrappedRSocketRequester);
                       });
                 });
       }
@@ -313,25 +342,40 @@ public class RSocketFactory {
           Fragmentation<ServerRSocketFactory>,
           ErrorConsumer<ServerRSocketFactory> {
 
-    protected Supplier<SocketAcceptor> acceptor;
-    protected Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
+    private Supplier<SocketAcceptor> acceptor;
+    private Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
     private int mtu = 0;
-    private PluginRegistry plugins = new PluginRegistry(Plugins.defaultPlugins());
+    private final InterceptorFactory interceptorFactory = new InterceptorFactory();
+    private Optional<Consumer<LeaseConnectionRef>> leaseControlConsumer = Optional.empty();
 
-    protected ServerRSocketFactory() {}
-
-    public ServerRSocketFactory addConnectionPlugin(DuplexConnectionInterceptor interceptor) {
-      plugins.addConnectionPlugin(interceptor);
+    public ServerRSocketFactory addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
+      this.interceptorFactory.interceptor(() -> new Interceptor().connection(interceptor));
       return this;
     }
 
-    public ServerRSocketFactory addClientPlugin(RSocketInterceptor interceptor) {
-      plugins.addClientPlugin(interceptor);
+    public ServerRSocketFactory addRequesterInterceptor(RSocketInterceptor interceptor) {
+      this.interceptorFactory.interceptor(() -> new Interceptor().requesterRSocket(interceptor));
       return this;
     }
 
-    public ServerRSocketFactory addServerPlugin(RSocketInterceptor interceptor) {
-      plugins.addServerPlugin(interceptor);
+    public ServerRSocketFactory addHandlerInterceptor(RSocketInterceptor interceptor) {
+      this.interceptorFactory.interceptor(() -> new Interceptor().handlerRSocket(interceptor));
+
+      return this;
+    }
+
+    protected ServerRSocketFactory addInterceptor(Supplier<Interceptor> interceptor) {
+      this.interceptorFactory.interceptor(interceptor);
+      return this;
+    }
+
+    public ServerRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {
+      this.leaseControlConsumer = Optional.of(leaseControlConsumer);
+      return this;
+    }
+
+    public ServerRSocketFactory disableLease() {
+      this.leaseControlConsumer = Optional.empty();
       return this;
     }
 
@@ -359,11 +403,15 @@ public class RSocketFactory {
       ServerStart(Supplier<ServerTransport<T>> transportServer) {
         this.transportServer = transportServer;
 
-        addConnectionPlugin(
+        addConnectionInterceptor(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
-
-        addConnectionPlugin(
+        addConnectionInterceptor(
             new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+
+        addInterceptor(
+            leaseControlConsumer
+                .map(LeaseSupport::forServer)
+                .orElseGet(LeaseSupport::missingForServer));
       }
 
       @Override
@@ -371,23 +419,28 @@ public class RSocketFactory {
         return transportServer
             .get()
             .start(
-                connection -> {
+                conn -> {
                   if (mtu > 0) {
-                    connection = new FragmentationDuplexConnection(connection, mtu);
+                    conn = new FragmentationDuplexConnection(conn, mtu);
                   }
-                  ConnectionDemux multiplexer = new ConnectionDemux(connection, plugins);
+                  InterceptorRegistry interceptors = interceptorFactory.create();
+                  ConnectionDemux connectionDemux = new ConnectionDemux(conn, interceptors);
 
-                  return multiplexer
+                  return connectionDemux
                       .asInitConnection()
                       .receive()
                       .next()
-                      .flatMap(setupFrame -> processSetupFrame(multiplexer, setupFrame));
+                      .flatMap(
+                          setupFrame ->
+                              processSetupFrame(interceptors, connectionDemux, setupFrame));
                 });
       }
 
-      private Mono<Void> processSetupFrame(ConnectionDemux multiplexer, Frame setupFrame) {
+      private Mono<Void> processSetupFrame(
+          InterceptorRegistry interceptors, ConnectionDemux multiplexer, Frame setupFrame) {
+
         int version = Frame.Setup.version(setupFrame);
-        if (version != SetupFrameFlyweight.CURRENT_VERSION) {
+        if (version != Frame.Setup.currentVersion()) {
           setupFrame.release();
           InvalidSetupException error =
               new InvalidSetupException(
@@ -399,13 +452,22 @@ public class RSocketFactory {
             new RSocketRequester(
                 multiplexer.asServerConnection(), errorConsumer, StreamIdSupplier.serverSupplier());
 
-        Mono<RSocket> wrappedRSocketClient = Mono.just(rSocketRequester).map(plugins::applyClient);
+        Mono<RSocket> wrappedRSocketRequester =
+            Mono.just(rSocketRequester).map(interceptors::interceptRequester);
 
         ConnectionSetupPayload setupPayload = ConnectionSetupPayload.create(setupFrame);
 
-        return wrappedRSocketClient
+        return wrappedRSocketRequester
             .flatMap(
-                sender -> acceptor.get().accept(setupPayload, sender).map(plugins::applyServer))
+                requester -> {
+                  Mono<RSocket> wrappedHandler =
+                      acceptor
+                          .get()
+                          .accept(setupPayload, requester)
+                          .map(interceptors::interceptHandler);
+
+                  return wrappedHandler;
+                })
             .map(
                 handler ->
                     new RSocketResponder(

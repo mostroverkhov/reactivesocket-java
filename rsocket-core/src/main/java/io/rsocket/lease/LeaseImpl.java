@@ -16,44 +16,28 @@
 
 package io.rsocket.lease;
 
-import io.rsocket.Frame;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.annotation.Nullable;
 
-public class LeaseImpl implements Lease {
+class LeaseImpl implements Lease {
   private final int ttl;
   protected final AtomicInteger numberOfRequests;
   private final int startingNumberOfRequests;
   private final ByteBuffer metadata;
   private final long expiry;
 
-  LeaseImpl(int numberOfRequests, int ttl, @Nullable ByteBuffer metadata) {
+  public LeaseImpl(int numberOfRequests, int ttl, @Nullable ByteBuffer metadata) {
     assertNumberOfRequests(numberOfRequests);
     this.numberOfRequests = new AtomicInteger(numberOfRequests);
     this.startingNumberOfRequests = numberOfRequests;
     this.ttl = ttl;
     this.metadata = metadata;
-    this.expiry = now() + ttl;
-  }
-
-  LeaseImpl(Lease lease) {
-    this(lease.getAllowedRequests(), lease.getTtl(), lease.getMetadata());
-  }
-
-  public LeaseImpl(Frame leaseFrame) {
-    this(
-        Frame.Lease.numberOfRequests(leaseFrame),
-        Frame.Lease.ttl(leaseFrame),
-        leaseFrame.getMetadata());
+    this.expiry = now() + ttl * 1000;
   }
 
   public int getTtl() {
     return ttl;
-  }
-
-  public int getStartingAllowedRequests() {
-    return startingNumberOfRequests;
   }
 
   @Override
@@ -74,11 +58,26 @@ public class LeaseImpl implements Lease {
     return now() <= expiry() && getAllowedRequests() > 0;
   }
 
+  public double availability() {
+    return isValid() ? getAllowedRequests() / (double) startingNumberOfRequests : 0.0;
+  }
+
+  public void use(int useRequestCount) {
+    assertUseRequests(useRequestCount);
+    numberOfRequests.accumulateAndGet(useRequestCount, (cur, update) -> Math.max(0, cur - update));
+  }
+
+  static void assertUseRequests(int useRequestCount) {
+    if (useRequestCount <= 0) {
+      throw new IllegalArgumentException("Number of requests should be positive");
+    }
+  }
+
   private long now() {
     return System.currentTimeMillis();
   }
 
-  static void assertNumberOfRequests(int numberOfRequest) {
+  private static void assertNumberOfRequests(int numberOfRequest) {
     if (numberOfRequest < 0) {
       throw new IllegalArgumentException("Number of requests should be positive");
     }

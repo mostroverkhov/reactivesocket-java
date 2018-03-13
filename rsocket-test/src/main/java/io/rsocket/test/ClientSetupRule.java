@@ -21,6 +21,7 @@ import io.rsocket.RSocket;
 import io.rsocket.RSocketFactory;
 import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
+import java.time.Duration;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -54,6 +55,7 @@ public class ClientSetupRule<T, S extends Closeable> extends ExternalResource {
     this.clientConnector =
         (address, server) ->
             RSocketFactory.connect()
+                .keepAlive(Duration.ofSeconds(10), 3, keepAlives -> {})
                 .transport(clientTransportSupplier.apply(address, server))
                 .start()
                 .doOnError(Throwable::printStackTrace)

@@ -24,7 +24,7 @@ public class LeaseClientServeReqRep {
 
     LeaseControlSource serverLeaseControl = new LeaseControlSource();
     NettyContextCloseable nettyContextCloseable =
-        CoolRSocketFactory.receive()
+        RSocketFactory.receive()
             .enableLease(serverLeaseControl)
             .acceptor(
                 (setup, reactiveSocket) ->
@@ -40,23 +40,14 @@ public class LeaseClientServeReqRep {
             .block();
 
     LeaseControlSource clientLeaseControl = new LeaseControlSource();
+
     RSocket clientSocket =
-        CoolRSocketFactory.connect()
+        RSocketFactory.connect()
             .enableLease(clientLeaseControl)
             .keepAlive(Duration.ofSeconds(1), 3, keeps -> {})
             .transport(TcpClientTransport.create("localhost", 7000))
             .start()
             .block();
-
-    clientLeaseControl
-        .leaseConnection()
-        .flatMapMany(LeaseConnectionRef::inboundLease)
-        .subscribe(
-            s ->
-                LOGGER.info(
-                    String.format(
-                        "Client received lease: Reqs: %d TTL: %d",
-                        s.getAllowedRequests(), s.getTtl())));
 
     Flux.interval(ofSeconds(1))
         .flatMap(
@@ -73,7 +64,8 @@ public class LeaseClientServeReqRep {
     serverLeaseControl
         .leaseConnection()
         .flatMapMany(connRef -> Flux.interval(ofSeconds(1), ofSeconds(10)).map(signal -> connRef))
-        .subscribe(ref -> ref.grantLease(7, 5_000));
+        .flatMap(ref -> ref.grantLease(7, 5))
+        .subscribe();
 
     clientSocket.onClose().block();
   }

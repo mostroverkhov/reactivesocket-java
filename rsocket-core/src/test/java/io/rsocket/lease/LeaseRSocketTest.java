@@ -1,56 +1,71 @@
-/*
 package io.rsocket.lease;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 import io.rsocket.Payload;
 import io.rsocket.RSocket;
 import io.rsocket.exceptions.NoLeaseException;
-import io.rsocket.plugins.RSocketInterceptor;
 import io.rsocket.util.PayloadImpl;
 import org.junit.Before;
 import org.junit.Test;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 public class LeaseRSocketTest {
 
+  private LeaseRSocket leaseRSocket;
+  private MockRSocket rSocket;
   private LeaseManager leaseManager;
-  private RSocket leaseRsocket;
-  private PayloadImpl payload;
 
   @Before
   public void setUp() throws Exception {
-    leaseManager = new LeaseManager("test");
-
-    RSocketInterceptor enforcer = rSocket -> new LeaseRSocket(rSocket, leaseManager, "test");
-    leaseRsocket = enforcer.apply(new EchoRSocket());
-    payload = new PayloadImpl("payload");
-  }
-
-  @Test(expected = NoLeaseException.class)
-  public void missingLease() throws Exception {
-    assertNotNull(leaseRsocket.requestResponse(payload).block());
+    rSocket = new MockRSocket();
+    leaseManager = new LeaseManager("");
+    leaseRSocket = new LeaseRSocket(rSocket, "", leaseManager);
   }
 
   @Test
-  public void availableLease() throws Exception {
-    leaseManager.leaseGranted(new LeaseImpl(1, 100_000));
-    leaseRsocket.requestResponse(payload).block();
-    Lease lease = leaseManager.getLeases().blockFirst();
-    assertEquals(0, lease.getAllowedRequests());
+  public void grantedLease() throws Exception {
+    leaseManager.grantLease(2, 1);
+    assertEquals(1.0, leaseRSocket.availability(), 1e-5);
   }
 
-  @Test(expected = NoLeaseException.class)
-  public void availableLeaseDepleted() throws Exception {
-    leaseManager.leaseGranted(new LeaseImpl(1, 100_000));
-    leaseRsocket.requestResponse(payload).block();
-    leaseRsocket.requestResponse(payload).block();
+  @Test
+  public void usedLease() throws Exception {
+    leaseManager.grantLease(2, 1);
+    leaseRSocket.fireAndForget(new PayloadImpl("test")).subscribe();
+    assertEquals(0.5, leaseRSocket.availability(), 1e-5);
   }
 
-  static class EchoRSocket implements RSocket {
+  @Test
+  public void depletedLease() throws Exception {
+    leaseManager.grantLease(1, 1);
+    leaseRSocket.fireAndForget(new PayloadImpl("test")).subscribe();
+    StepVerifier.create(leaseRSocket.fireAndForget(new PayloadImpl("test")))
+        .expectError(NoLeaseException.class)
+        .verify();
+  }
+
+  @Test
+  public void connectionNotAvailable() throws Exception {
+    leaseManager.grantLease(1, 1);
+    rSocket.setAvailability(0.0f);
+    assertEquals(0.0, leaseRSocket.availability(), 1e-5);
+  }
+
+  private static class MockRSocket implements RSocket {
+    private float availability = 1.0f;
+
+    public void setAvailability(float availability) {
+      this.availability = availability;
+    }
+
+    @Override
+    public double availability() {
+      return availability;
+    }
 
     @Override
     public Mono<Void> fireAndForget(Payload payload) {
@@ -88,4 +103,3 @@ public class LeaseRSocketTest {
     }
   }
 }
-*/

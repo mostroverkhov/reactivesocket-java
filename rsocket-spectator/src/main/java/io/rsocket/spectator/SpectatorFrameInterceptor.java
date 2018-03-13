@@ -21,7 +21,7 @@ import com.netflix.spectator.api.Registry;
 import io.rsocket.DuplexConnection;
 import io.rsocket.Frame;
 import io.rsocket.FrameType;
-import io.rsocket.plugins.DuplexConnectionInterceptor;
+import io.rsocket.interceptors.DuplexConnectionInterceptor;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

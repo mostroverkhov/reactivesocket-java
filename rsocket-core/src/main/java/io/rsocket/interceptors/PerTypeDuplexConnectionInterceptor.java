@@ -1,4 +1,4 @@
-package io.rsocket.plugins;
+package io.rsocket.interceptors;
 
 import io.rsocket.DuplexConnection;
 import java.util.function.Function;

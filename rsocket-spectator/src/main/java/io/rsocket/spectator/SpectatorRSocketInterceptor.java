@@ -18,7 +18,7 @@ package io.rsocket.spectator;
 
 import com.netflix.spectator.api.Registry;
 import io.rsocket.RSocket;
-import io.rsocket.plugins.RSocketInterceptor;
+import io.rsocket.interceptors.RSocketInterceptor;
 
 /** Interceptor that wraps a {@link RSocket} with a {@link SpectatorRSocket} */
 public class SpectatorRSocketInterceptor implements RSocketInterceptor {
