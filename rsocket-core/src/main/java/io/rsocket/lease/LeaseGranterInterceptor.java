@@ -19,8 +19,10 @@ class LeaseGranterInterceptor implements DuplexConnectionInterceptor {
   @Override
   public DuplexConnection apply(Type type, DuplexConnection connection) {
     if (type == Type.STREAM_ZERO) {
-      LeaseGranterConnection leaseGranterConnection = new LeaseGranterConnection(connection, sender, receiver);
-      leaseHandle.accept(new LeaseConnectionRef(leaseGranterConnection, leaseGranterConnection.onClose()));
+      LeaseGranterConnection leaseGranterConnection =
+          new LeaseGranterConnection(connection, sender, receiver);
+      leaseHandle.accept(
+          new LeaseConnectionRef(leaseGranterConnection, leaseGranterConnection.onClose()));
       return leaseGranterConnection;
     } else {
       return connection;

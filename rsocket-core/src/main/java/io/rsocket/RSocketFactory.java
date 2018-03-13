@@ -147,9 +147,10 @@ public class RSocketFactory {
       return this;
     }
 
-   public ClientRSocketFactory keepAlive(Duration period, int periodsTimeout, Consumer<KeepAlives> consumer) {
+    public ClientRSocketFactory keepAlive(
+        Duration period, int periodsTimeout, Consumer<KeepAlives> consumer) {
       return keepAlive(period, periodsTimeout, () -> Frame.NULL_BYTEBUFFER, consumer);
-   }
+    }
 
     public ClientRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {
       this.leaseConsumer = Optional.of(leaseControlConsumer);
@@ -208,39 +209,40 @@ public class RSocketFactory {
     protected class StartClient implements Start<RSocket> {
       private final Supplier<ClientTransport> transportClient;
       private final InterceptorFactory interceptorFactory;
+
       StartClient(Supplier<ClientTransport> transportClient) {
         this.transportClient = transportClient;
         this.interceptorFactory = ClientRSocketFactory.this.interceptorFactory.copy();
 
         interceptorFactory.addConnectionInterceptor(
-                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
 
         interceptorFactory.addConnectionInterceptor(
-                new PerTypeDuplexConnectionInterceptor(
-                        STREAM_ZERO,
-                        conn -> {
-                          KeepAliveRequesterConnection keepAliveRequesterConnection =
-                                  new KeepAliveRequesterConnection(
-                                          conn,
-                                          keepAlivePeriod,
-                                          keepAlivePeriodsTimeout,
-                                          keepAlivePayloadSupplier,
-                                          errorConsumer);
-                          keepAlivesConsumer.accept(
-                                  new KeepAlives(
-                                          keepAliveRequesterConnection.keepAliveAvailable(),
-                                          keepAliveRequesterConnection.keepAliveMissing(),
-                                          keepAliveRequesterConnection.close()));
+            new PerTypeDuplexConnectionInterceptor(
+                STREAM_ZERO,
+                conn -> {
+                  KeepAliveRequesterConnection keepAliveRequesterConnection =
+                      new KeepAliveRequesterConnection(
+                          conn,
+                          keepAlivePeriod,
+                          keepAlivePeriodsTimeout,
+                          keepAlivePayloadSupplier,
+                          errorConsumer);
+                  keepAlivesConsumer.accept(
+                      new KeepAlives(
+                          keepAliveRequesterConnection.keepAliveAvailable(),
+                          keepAliveRequesterConnection.keepAliveMissing(),
+                          keepAliveRequesterConnection.close()));
 
-                          return keepAliveRequesterConnection;
-                        }));
+                  return keepAliveRequesterConnection;
+                }));
 
         interceptorFactory.addConnectionInterceptor(
-                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
 
         leaseConsumer.ifPresent(
-            leaseConsumer -> interceptorFactory
-                    .addInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
+            leaseConsumer ->
+                interceptorFactory.addInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
       }
 
       @Override
@@ -363,11 +365,12 @@ public class RSocketFactory {
         this.interceptorFactory = ServerRSocketFactory.this.interceptorFactory.copy();
 
         interceptorFactory.addConnectionInterceptor(
-                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, KeepAliveResponderConnection::new));
         interceptorFactory.addConnectionInterceptor(
-                new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
+            new PerTypeDuplexConnectionInterceptor(STREAM_ZERO, ZeroErrorHandlingConnection::new));
 
-        Supplier<InterceptorSet> leaseInterceptor = leaseControlConsumer
+        Supplier<InterceptorSet> leaseInterceptor =
+            leaseControlConsumer
                 .map(LeaseSupport::forServer)
                 .orElseGet(LeaseSupport::missingForServer);
 

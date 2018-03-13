@@ -7,8 +7,7 @@ import java.util.function.Supplier;
 public class InterceptorFactory {
   private final List<Supplier<InterceptorSet>> interceptors = new ArrayList<>();
 
-  public InterceptorFactory() {
-  }
+  public InterceptorFactory() {}
 
   private InterceptorFactory(InterceptorFactory interceptorFactory) {
     interceptors.addAll(interceptorFactory.interceptors);
