@@ -8,7 +8,6 @@ import io.rsocket.DuplexConnection;
 import io.rsocket.Frame;
 import io.rsocket.FrameType;
 import io.rsocket.test.util.LocalDuplexConnection;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -70,9 +69,7 @@ public class KeepAliveRequesterTest {
     receiveConn.receive().subscribe();
 
     StepVerifier.create(
-            receiveConn
-                .keepAliveMissing()
-                .takeUntilOther(Mono.delay(Duration.ofSeconds(4))))
+            receiveConn.keepAliveMissing().takeUntilOther(Mono.delay(Duration.ofSeconds(4))))
         .expectNextMatches(keepAlive -> checkKeepAliveMissing(keepAlive, 3))
         .expectComplete()
         .verify(ofSeconds(5));
@@ -92,15 +89,12 @@ public class KeepAliveRequesterTest {
     return expectedData.equals(getData(data));
   }
 
-  private boolean checkKeepAliveMissing(KeepAliveMissing keepAliveMissing,
-                                        int expectectedTicks) {
+  private boolean checkKeepAliveMissing(KeepAliveMissing keepAliveMissing, int expectectedTicks) {
     return keepAliveMissing.timeoutTicks() == expectectedTicks;
   }
 
   private String getData(ByteBuffer data) {
-    return StandardCharsets.UTF_8
-        .decode(data)
-        .toString();
+    return StandardCharsets.UTF_8.decode(data).toString();
   }
 
   private KeepAliveRequesterConnection newConn(DuplexConnection conn) {
