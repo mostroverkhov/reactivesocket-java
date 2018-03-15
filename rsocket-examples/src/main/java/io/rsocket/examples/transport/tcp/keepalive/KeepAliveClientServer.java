@@ -1,9 +1,7 @@
 package io.rsocket.examples.transport.tcp.keepalive;
 
-import static io.rsocket.interceptors.DuplexConnectionInterceptor.Type;
-
 import io.rsocket.*;
-import io.rsocket.interceptors.PerTypeDuplexConnectionInterceptor;
+import io.rsocket.interceptors.DuplexConnectionInterceptor;
 import io.rsocket.keepalive.KeepAliveMissing;
 import io.rsocket.keepalive.KeepAlives;
 import io.rsocket.transport.netty.client.TcpClientTransport;
@@ -29,8 +27,7 @@ public class KeepAliveClientServer {
   public static void main(String[] args) {
     NettyContextCloseable nettyContextCloseable =
         RSocketFactory.receive()
-            .addConnectionInterceptor(
-                new PerTypeDuplexConnectionInterceptor(Type.SOURCE, FlakyConnection::new))
+            .addConnectionInterceptor(new FlakyConnectionInterceptor())
             .acceptor(
                 (setup, reactiveSocket) ->
                     Mono.just(
@@ -52,6 +49,18 @@ public class KeepAliveClientServer {
             .block();
 
     clientSocket.onClose().block();
+  }
+
+  static class FlakyConnectionInterceptor implements DuplexConnectionInterceptor {
+
+    @Override
+    public DuplexConnection apply(Type type, DuplexConnection connection) {
+      if (type == Type.SOURCE) {
+        return new FlakyConnection(connection);
+      } else {
+        return connection;
+      }
+    }
   }
 
   static class FlakyConnection extends DuplexConnectionProxy {
