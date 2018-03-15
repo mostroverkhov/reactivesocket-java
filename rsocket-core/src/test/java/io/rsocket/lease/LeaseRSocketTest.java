@@ -23,7 +23,8 @@ public class LeaseRSocketTest {
   public void setUp() throws Exception {
     rSocket = new MockRSocket();
     leaseManager = new LeaseManager("");
-    leaseRSocket = new LeaseRSocket(rSocket, "", leaseManager);
+    LeaseContext leaseEnabled = new LeaseContext();
+    leaseRSocket = new LeaseRSocket(leaseEnabled, rSocket, "", leaseManager);
   }
 
   @Test

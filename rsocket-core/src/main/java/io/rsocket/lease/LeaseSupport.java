@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public class LeaseSupport {
+  private static final LeaseContext leaseEnabled = new LeaseContext();
 
   public static Supplier<InterceptorFactory.InterceptorSet> missingForServer() {
     /*handles case when client requests Lease but server does not support it*/
@@ -20,11 +21,11 @@ public class LeaseSupport {
       LeaseContext leaseContext = new LeaseContext();
       return new InterceptorFactory.InterceptorSet()
           /*requester rsocket is Lease aware*/
-          .requesterRSocket(new LeaseInterceptor("server requester", sender))
+          .requesterRSocket(new LeaseInterceptor(leaseContext, "server requester", sender))
           /*handler rsocket is Lease aware*/
-          .handlerRSocket(new LeaseInterceptor("server responder", receiver))
+          .handlerRSocket(new LeaseInterceptor(leaseContext, "server responder", receiver))
           /*grants Lease quotas of above rsockets*/
-          .connection(new LeaseGranterInterceptor(sender, receiver, leaseHandle))
+          .connection(new LeaseGranterInterceptor(leaseContext, sender, receiver, leaseHandle))
           /*enables lease for particular connection*/
           .connection(new ServerLeaseEnablingInterceptor(leaseContext));
     };
@@ -38,11 +39,11 @@ public class LeaseSupport {
 
       return new InterceptorFactory.InterceptorSet()
           /*requester rsocket is Lease aware*/
-          .requesterRSocket(new LeaseInterceptor("client requester", sender))
+          .requesterRSocket(new LeaseInterceptor(leaseEnabled, "client requester", sender))
           /*handler rsocket is Lease aware*/
-          .handlerRSocket(new LeaseInterceptor("client responder", receiver))
+          .handlerRSocket(new LeaseInterceptor(leaseEnabled, "client responder", receiver))
           /*grants Lease quotas to above rsockets*/
-          .connection(new LeaseGranterInterceptor(sender, receiver, leaseHandle));
+          .connection(new LeaseGranterInterceptor(leaseEnabled, sender, receiver, leaseHandle));
     };
   }
 }

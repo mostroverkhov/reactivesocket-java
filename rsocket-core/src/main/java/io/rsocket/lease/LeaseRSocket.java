@@ -10,14 +10,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class LeaseRSocket extends RSocketProxy {
-  private static final LeaseContext alwaysEnabled = new LeaseContext();
   private final LeaseContext leaseContext;
   private final String tag;
   private final LeaseManager leaseManager;
-
-  public LeaseRSocket(RSocket source, String tag, LeaseManager leaseManager) {
-    this(alwaysEnabled, source, tag, leaseManager);
-  }
 
   public LeaseRSocket(
       LeaseContext leaseContext, RSocket source, String tag, LeaseManager leaseManager) {

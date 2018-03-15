@@ -12,7 +12,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 class LeaseGranterConnection extends DuplexConnectionProxy implements LeaseGranter {
-  private static final LeaseContext alwaysEnabled = new LeaseContext();
   private final LeaseContext leaseContext;
   private final LeaseManager sendManager;
   private final LeaseManager receiveManager;
@@ -26,11 +25,6 @@ class LeaseGranterConnection extends DuplexConnectionProxy implements LeaseGrant
     this.leaseContext = leaseContext;
     this.sendManager = sendManager;
     this.receiveManager = receiveManager;
-  }
-
-  public LeaseGranterConnection(
-      DuplexConnection source, LeaseManager sendManager, LeaseManager receiveManager) {
-    this(alwaysEnabled, source, sendManager, receiveManager);
   }
 
   @Override
