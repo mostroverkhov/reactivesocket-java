@@ -134,11 +134,11 @@ public class RSocketFactory {
     public ClientRSocketFactory keepAlive(
         Duration keepAlivePeriod,
         int keepAlivePeriodsTimeout,
-        Supplier<ByteBuffer> keepAlivePayloadSupplier,
+        Supplier<ByteBuffer> payloadSupplier,
         Consumer<KeepAlives> keepAlivesConsumer) {
       this.keepAlivePeriod = keepAlivePeriod;
       this.keepAlivePeriodsTimeout = keepAlivePeriodsTimeout;
-      this.keepAlivePayloadSupplier = keepAlivePayloadSupplier;
+      this.keepAlivePayloadSupplier = payloadSupplier;
       this.keepAlivesConsumer = keepAlivesConsumer;
       return this;
     }
@@ -146,6 +146,20 @@ public class RSocketFactory {
     public ClientRSocketFactory keepAlive(
         Duration period, int periodsTimeout, Consumer<KeepAlives> consumer) {
       return keepAlive(period, periodsTimeout, () -> Frame.NULL_BYTEBUFFER, consumer);
+    }
+
+    public ClientRSocketFactory keepAlive(Duration period, int periodsTimeout) {
+      return keepAlive(
+          period,
+          periodsTimeout,
+          () -> Frame.NULL_BYTEBUFFER,
+          new CloseOnKeepAliveTimeout(errorConsumer));
+    }
+
+    public ClientRSocketFactory keepAlive(
+        Duration period, int periodsTimeout, Supplier<ByteBuffer> payloadSupplier) {
+      return keepAlive(
+          period, periodsTimeout, payloadSupplier, new CloseOnKeepAliveTimeout(errorConsumer));
     }
 
     public ClientRSocketFactory enableLease(Consumer<LeaseConnectionRef> leaseControlConsumer) {

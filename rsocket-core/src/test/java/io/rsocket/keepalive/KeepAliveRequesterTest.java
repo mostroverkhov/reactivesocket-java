@@ -8,6 +8,8 @@ import io.rsocket.DuplexConnection;
 import io.rsocket.Frame;
 import io.rsocket.FrameType;
 import io.rsocket.test.util.LocalDuplexConnection;
+
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -53,8 +55,8 @@ public class KeepAliveRequesterTest {
 
     StepVerifier.create(
             receiveConn.keepAliveAvailable().takeUntilOther(Mono.delay(Duration.ofSeconds(2))))
-        .expectNextMatches(keepAlive -> isKeepAliveAvailable(keepAlive, "hello"))
-        .expectNextMatches(keepAlive -> isKeepAliveAvailable(keepAlive, "hello"))
+        .expectNextMatches(keepAlive -> checkKeepAliveData(keepAlive, "hello"))
+        .expectNextMatches(keepAlive -> checkKeepAliveData(keepAlive, "hello"))
         .expectComplete()
         .verify(ofSeconds(3));
   }
@@ -70,10 +72,8 @@ public class KeepAliveRequesterTest {
     StepVerifier.create(
             receiveConn
                 .keepAliveMissing()
-                .takeUntilOther(Mono.delay(Duration.ofSeconds(4)))
-                .take(2))
-        .expectNextMatches(keepAlive -> isKeepAliveMissing(keepAlive, 3))
-        .expectNextMatches(keepAlive -> isKeepAliveMissing(keepAlive, 4))
+                .takeUntilOther(Mono.delay(Duration.ofSeconds(4))))
+        .expectNextMatches(keepAlive -> checkKeepAliveMissing(keepAlive, 3))
         .expectComplete()
         .verify(ofSeconds(5));
   }
@@ -88,23 +88,19 @@ public class KeepAliveRequesterTest {
     return f.getType().equals(FrameType.KEEPALIVE) && Frame.Keepalive.hasRespondFlag(f);
   }
 
-  private boolean isKeepAliveAvailable(KeepAlive keepAlive, String expectedData) {
-    return keepAlive instanceof KeepAlive.KeepAliveAvailable
-        && expectedData.equals(getData(keepAlive));
+  private boolean checkKeepAliveData(ByteBuffer data, String expectedData) {
+    return expectedData.equals(getData(data));
   }
 
-  private boolean isKeepAliveMissing(KeepAlive keepAlive, int missingCount) {
-    return keepAlive instanceof KeepAlive.KeepAliveMissing && missingCount == getCount(keepAlive);
+  private boolean checkKeepAliveMissing(KeepAliveMissing keepAliveMissing,
+                                        int expectectedTicks) {
+    return keepAliveMissing.timeoutTicks() == expectectedTicks;
   }
 
-  private String getData(KeepAlive keepAlive) {
+  private String getData(ByteBuffer data) {
     return StandardCharsets.UTF_8
-        .decode(((KeepAlive.KeepAliveAvailable) keepAlive).getData())
+        .decode(data)
         .toString();
-  }
-
-  private int getCount(KeepAlive keepAlive) {
-    return ((KeepAlive.KeepAliveMissing) keepAlive).getCurrentTicks();
   }
 
   private KeepAliveRequesterConnection newConn(DuplexConnection conn) {

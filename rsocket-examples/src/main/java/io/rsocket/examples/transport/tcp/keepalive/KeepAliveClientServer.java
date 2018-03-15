@@ -1,11 +1,10 @@
 package io.rsocket.examples.transport.tcp.keepalive;
 
-import static io.rsocket.interceptors.DuplexConnectionInterceptor.*;
-import static io.rsocket.keepalive.KeepAlive.KeepAliveAvailable;
-import static io.rsocket.keepalive.KeepAlive.KeepAliveMissing;
+import static io.rsocket.interceptors.DuplexConnectionInterceptor.Type;
 
 import io.rsocket.*;
 import io.rsocket.interceptors.PerTypeDuplexConnectionInterceptor;
+import io.rsocket.keepalive.KeepAliveMissing;
 import io.rsocket.keepalive.KeepAlives;
 import io.rsocket.transport.netty.client.TcpClientTransport;
 import io.rsocket.transport.netty.server.NettyContextCloseable;
@@ -96,7 +95,7 @@ public class KeepAliveClientServer {
 
     @Override
     public void accept(KeepAlives keepAlives) {
-      Flux<KeepAliveAvailable> keepAliveAvailable = keepAlives.keepAliveAvailable();
+      Flux<ByteBuffer> keepAliveAvailable = keepAlives.keepAlive();
       Flux<KeepAliveMissing> keepAliveMissing = keepAlives.keepAliveMissing();
 
       keepAliveAvailable.subscribe(this::logReceive, err -> LOGGER.error(err.toString()));
@@ -105,11 +104,11 @@ public class KeepAliveClientServer {
     }
 
     private void logMissing(KeepAliveMissing keepAlive) {
-      LOGGER.info(String.format("Keep alive missing: %d", keepAlive.getCurrentTicks()));
+      LOGGER.info(String.format("Keep alive missing: Ticks %d", keepAlive.timeoutTicks()));
     }
 
-    private void logReceive(KeepAliveAvailable keepAlive) {
-      LOGGER.info(String.format("Keep alive received: %s", msg(keepAlive.getData())));
+    private void logReceive(ByteBuffer data) {
+      LOGGER.info(String.format("Keep alive received: %s", msg(data)));
     }
   }
 

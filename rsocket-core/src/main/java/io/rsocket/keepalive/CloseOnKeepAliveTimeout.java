@@ -22,11 +22,11 @@ public class CloseOnKeepAliveTimeout implements Consumer<KeepAlives> {
             errConsumer);
   }
 
-  private Exception keepAliveMissingError(KeepAlive.KeepAliveMissing keepAliveMissing) {
+  private Exception keepAliveMissingError(KeepAliveMissing keepAliveMissing) {
     String message =
         String.format(
             "Missed %d keep-alive acks with ack timeout of %d ms",
-            keepAliveMissing.getCurrentTicks(), keepAliveMissing.getTickPeriod().toMillis());
+            keepAliveMissing.timeoutTicks(), keepAliveMissing.tickPeriod().toMillis());
     return new ConnectionException(message);
   }
 }

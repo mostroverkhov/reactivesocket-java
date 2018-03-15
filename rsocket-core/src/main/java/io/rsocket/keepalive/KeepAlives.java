@@ -1,17 +1,16 @@
 package io.rsocket.keepalive;
 
-import static io.rsocket.keepalive.KeepAlive.*;
-
+import java.nio.ByteBuffer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class KeepAlives {
-  private final Flux<KeepAliveAvailable> keepAliveAvailable;
+  private final Flux<ByteBuffer> keepAliveAvailable;
   private final Flux<KeepAliveMissing> keepAliveMissing;
   private final Mono<Void> closeConnection;
 
   public KeepAlives(
-      Flux<KeepAliveAvailable> keepAliveAvailable,
+      Flux<ByteBuffer> keepAliveAvailable,
       Flux<KeepAliveMissing> keepAliveMissing,
       Mono<Void> closeConnection) {
     this.keepAliveAvailable = keepAliveAvailable;
@@ -19,7 +18,7 @@ public class KeepAlives {
     this.closeConnection = closeConnection;
   }
 
-  public Flux<KeepAliveAvailable> keepAliveAvailable() {
+  public Flux<ByteBuffer> keepAlive() {
     return keepAliveAvailable;
   }
 
