@@ -1,0 +1,245 @@
+/*
+ * Copyright 2016 Netflix, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.github.mostroverkhov.rsocket;
+
+import static com.github.mostroverkhov.rsocket.FrameType.*;
+import static com.github.mostroverkhov.rsocket.test.util.TestSubscriber.anyPayload;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.instanceOf;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+
+import com.github.mostroverkhov.rsocket.exceptions.ApplicationException;
+import com.github.mostroverkhov.rsocket.frame.RequestFrameFlyweight;
+import com.github.mostroverkhov.rsocket.test.util.TestSubscriber;
+import com.github.mostroverkhov.rsocket.util.PayloadImpl;
+import java.nio.channels.ClosedChannelException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.junit.Rule;
+import org.junit.Test;
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
+import reactor.core.publisher.BaseSubscriber;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+
+public class RSocketRequesterTest {
+
+  @Rule public final ClientSocketRule rule = new ClientSocketRule();
+
+  @Test(timeout = 2_000)
+  public void testInvalidFrameOnStream0() {
+    rule.connection.addToReceivedBuffer(Frame.RequestN.from(0, 10));
+    assertThat("Unexpected errors.", rule.errors, hasSize(1));
+    assertThat(
+        "Unexpected error received.",
+        rule.errors,
+        contains(instanceOf(IllegalStateException.class)));
+  }
+
+  @Test(timeout = 2_000)
+  public void testStreamInitialN() {
+    Flux<Payload> stream = rule.socket.requestStream(PayloadImpl.EMPTY);
+
+    BaseSubscriber<Payload> subscriber =
+        new BaseSubscriber<Payload>() {
+          @Override
+          protected void hookOnSubscribe(Subscription subscription) {
+            // don't request here
+            //        subscription.request(3);
+          }
+        };
+    stream.subscribe(subscriber);
+
+    subscriber.request(5);
+
+    List<Frame> sent =
+        rule.connection
+            .getSent()
+            .stream()
+            .filter(f -> f.getType() != KEEPALIVE)
+            .collect(Collectors.toList());
+
+    assertThat("sent frame count", sent.size(), is(1));
+
+    Frame f = sent.get(0);
+
+    assertThat("initial frame", f.getType(), is(REQUEST_STREAM));
+    assertThat("initial request n", RequestFrameFlyweight.initialRequestN(f.content()), is(5));
+  }
+
+  @Test(timeout = 2_000)
+  public void testHandleApplicationException() {
+    rule.connection.clearSendReceiveBuffers();
+    Publisher<Payload> response = rule.socket.requestResponse(PayloadImpl.EMPTY);
+    Subscriber<Payload> responseSub = TestSubscriber.create();
+    response.subscribe(responseSub);
+
+    int streamId = rule.getStreamIdForRequestType(REQUEST_RESPONSE);
+    rule.connection.addToReceivedBuffer(
+        Frame.Error.from(streamId, new ApplicationException("error")));
+
+    verify(responseSub).onError(any(ApplicationException.class));
+  }
+
+  @Test(timeout = 2_000)
+  public void testHandleValidFrame() {
+    Publisher<Payload> response = rule.socket.requestResponse(PayloadImpl.EMPTY);
+    Subscriber<Payload> sub = TestSubscriber.create();
+    response.subscribe(sub);
+
+    int streamId = rule.getStreamIdForRequestType(REQUEST_RESPONSE);
+    rule.connection.addToReceivedBuffer(
+        Frame.PayloadFrame.from(streamId, NEXT_COMPLETE, PayloadImpl.EMPTY));
+
+    verify(sub).onNext(anyPayload());
+    verify(sub).onComplete();
+  }
+
+  @Test(timeout = 2_000)
+  public void testRequestReplyWithCancel() {
+    Mono<Payload> response = rule.socket.requestResponse(PayloadImpl.EMPTY);
+
+    try {
+      response.block(Duration.ofMillis(100));
+    } catch (IllegalStateException ise) {
+    }
+
+    List<Frame> sent =
+        rule.connection
+            .getSent()
+            .stream()
+            .filter(f -> f.getType() != KEEPALIVE)
+            .collect(Collectors.toList());
+
+    assertThat(
+        "Unexpected frame sent on the connection.", sent.get(0).getType(), is(REQUEST_RESPONSE));
+    assertThat("Unexpected frame sent on the connection.", sent.get(1).getType(), is(CANCEL));
+  }
+
+  @Test
+  public void reqResponseErrorAfterClose() throws Exception {
+    assertMonoError(rsocket -> rsocket.requestResponse(new PayloadImpl("test")));
+  }
+
+  @Test
+  public void reqStreamErrorAfterClose() throws Exception {
+    assertFluxError(rsocket -> rsocket.requestStream(new PayloadImpl("test")));
+  }
+
+  @Test
+  public void reqChannelErrorAfterClose() throws Exception {
+    assertFluxError(rsocket -> rsocket.requestChannel(Flux.just(new PayloadImpl("test"))));
+  }
+
+  @Test
+  public void fnfErrorAfterClose() throws Exception {
+    assertMonoError(rsocket -> rsocket.fireAndForget(new PayloadImpl("test")));
+  }
+
+  @Test
+  public void metadataPushErrorAfterClose() throws Exception {
+    assertMonoError(rsocket -> rsocket.metadataPush(new PayloadImpl("test")));
+  }
+
+  @Test(timeout = 2_000)
+  public void testRequestReplyErrorOnSend() {
+    rule.connection.setAvailability(0); // Fails send
+    Mono<Payload> response = rule.socket.requestResponse(PayloadImpl.EMPTY);
+    Subscriber<Payload> responseSub = TestSubscriber.create(10);
+    response.subscribe(responseSub);
+
+    this.rule.assertNoConnectionErrors();
+
+    verify(responseSub).onSubscribe(any(Subscription.class));
+
+    // TODO this should get the error reported through the response subscription
+    //    verify(responseSub).onError(any(RuntimeException.class));
+  }
+
+  @Test(timeout = 2_000)
+  public void testLazyRequestResponse() {
+    Publisher<Payload> response = rule.socket.requestResponse(PayloadImpl.EMPTY);
+    int streamId = sendRequestResponse(response);
+    rule.connection.clearSendReceiveBuffers();
+    int streamId2 = sendRequestResponse(response);
+    assertThat("Stream ID reused.", streamId2, not(equalTo(streamId)));
+  }
+
+  private int sendRequestResponse(Publisher<Payload> response) {
+    Subscriber<Payload> sub = TestSubscriber.create();
+    response.subscribe(sub);
+    int streamId = rule.getStreamIdForRequestType(REQUEST_RESPONSE);
+    rule.connection.addToReceivedBuffer(
+        Frame.PayloadFrame.from(streamId, NEXT_COMPLETE, PayloadImpl.EMPTY));
+    verify(sub).onNext(anyPayload());
+    verify(sub).onComplete();
+    return streamId;
+  }
+
+  private void assertFluxError(Function<RSocket, Flux<Payload>> f) {
+    rule.connection.close().subscribe();
+    Flux<Payload> response = f.apply(rule.socket).delaySubscription(Duration.ofMillis(100));
+    StepVerifier.create(response)
+        .expectError(ClosedChannelException.class)
+        .verify(Duration.ofMillis(5_000));
+  }
+
+  private <T> void assertMonoError(Function<RSocket, Mono<T>> f) {
+    rule.connection.close().subscribe();
+    Mono<T> response = f.apply(rule.socket).delaySubscription(Duration.ofMillis(100));
+    StepVerifier.create(response)
+        .expectError(ClosedChannelException.class)
+        .verify(Duration.ofMillis(5_000));
+  }
+
+  public static class ClientSocketRule extends AbstractSocketRule<RSocketRequester> {
+    @Override
+    protected RSocketRequester newRSocket() {
+      return new RSocketRequester(
+          connection, throwable -> errors.add(throwable), StreamIdSupplier.clientSupplier());
+    }
+
+    public int getStreamIdForRequestType(FrameType expectedFrameType) {
+      assertThat("Unexpected frames sent.", connection.getSent(), hasSize(greaterThanOrEqualTo(1)));
+      List<FrameType> framesFound = new ArrayList<>();
+      for (Frame frame : connection.getSent()) {
+        if (frame.getType() == expectedFrameType) {
+          return frame.getStreamId();
+        }
+        framesFound.add(frame.getType());
+      }
+      throw new AssertionError(
+          "No frames sent with frame type: "
+              + expectedFrameType
+              + ", frames found: "
+              + framesFound);
+    }
+  }
+}

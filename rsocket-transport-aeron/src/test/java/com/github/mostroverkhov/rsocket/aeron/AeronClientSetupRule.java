@@ -1,0 +1,62 @@
+/*
+ * Copyright 2016 Netflix, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.github.mostroverkhov.rsocket.aeron;
+
+import com.github.mostroverkhov.rsocket.Closeable;
+import com.github.mostroverkhov.rsocket.aeron.client.AeronClientTransport;
+import com.github.mostroverkhov.rsocket.aeron.internal.*;
+import com.github.mostroverkhov.rsocket.aeron.internal.reactivestreams.AeronClientChannelConnector;
+import com.github.mostroverkhov.rsocket.aeron.internal.reactivestreams.AeronSocketAddress;
+import com.github.mostroverkhov.rsocket.aeron.server.AeronServerTransport;
+import com.github.mostroverkhov.rsocket.test.ClientSetupRule;
+
+class AeronClientSetupRule extends ClientSetupRule<AeronSocketAddress, Closeable> {
+
+  public static final AeronSocketAddress ADDRESS =
+      AeronSocketAddress.create("aeron:udp", "127.0.0.1", 39790);
+
+  static {
+    MediaDriverHolder.getInstance();
+    AeronWrapper aeronWrapper = new DefaultAeronWrapper();
+
+    EventLoop serverEventLoop = new SingleThreadedEventLoop("server");
+    server = new AeronServerTransport(aeronWrapper, ADDRESS, serverEventLoop);
+
+    // Create Client Connector
+    EventLoop clientEventLoop = new SingleThreadedEventLoop("client");
+
+    AeronClientChannelConnector.AeronClientConfig config =
+        AeronClientChannelConnector.AeronClientConfig.create(
+            ADDRESS,
+            ADDRESS,
+            Constants.CLIENT_STREAM_ID,
+            Constants.SERVER_STREAM_ID,
+            clientEventLoop);
+
+    AeronClientChannelConnector connector =
+        AeronClientChannelConnector.create(aeronWrapper, ADDRESS, clientEventLoop);
+
+    client = new AeronClientTransport(connector, config);
+  }
+
+  private static final AeronServerTransport server;
+  private static final AeronClientTransport client;
+
+  AeronClientSetupRule() {
+    super(() -> ADDRESS, (address, server) -> client, address -> server);
+  }
+}

@@ -1,8 +1,8 @@
-#### Forked project with a goal to add missing and important rsocket protocol features. Effort will be made to implement them as plugins to share with [rsocket-android](https://github.com/mostroverkhov/rsocket-android)
+#### Fork maintained to investigate and add missing RSocket protocol features
 
 Changes
 * lease support
-* alternative keep-alive API to add and listen for data of keep-alive frames, handle missing keep-alives on application level
+* alternative keep-alive API to add and receive payloads of Keep-Alive frames, handle missing keep-alives on application level
 * receiving metadata push works for both sides of connection
 
 # RSocket
@@ -64,11 +64,11 @@ Frames can be printed out to help debugging. Set the logger `io.rsocket.FrameLog
 ```
 package io.rsocket.transport.netty;
 
-import io.rsocket.Payload;
-import io.rsocket.RSocket;
-import io.rsocket.RSocketFactory;
-import io.rsocket.transport.netty.client.WebsocketClientTransport;
-import io.rsocket.util.PayloadImpl;
+import Payload;
+import RSocket;
+import RSocketFactory;
+import WebsocketClientTransport;
+import PayloadImpl;
 import reactor.core.publisher.Flux;
 
 import java.net.URI;
