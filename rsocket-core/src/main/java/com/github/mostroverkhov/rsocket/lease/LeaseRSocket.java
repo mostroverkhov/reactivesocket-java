@@ -40,27 +40,35 @@ class LeaseRSocket extends RSocketProxy {
 
   @Override
   public Mono<Void> fireAndForget(Payload payload) {
-    return request(Mono::defer, super.fireAndForget(payload), Mono::error);
+    return request(super.fireAndForget(payload));
   }
 
   @Override
   public Mono<Payload> requestResponse(Payload payload) {
-    return request(Mono::defer, super.requestResponse(payload), Mono::error);
+    return request(super.requestResponse(payload));
   }
 
   @Override
   public Flux<Payload> requestStream(Payload payload) {
-    return request(Flux::defer, super.requestStream(payload), Flux::error);
+    return request(super.requestStream(payload));
   }
 
   @Override
   public Flux<Payload> requestChannel(Publisher<Payload> payloads) {
-    return request(Flux::defer, super.requestChannel(payloads), Flux::error);
+    return request(super.requestChannel(payloads));
   }
 
   @Override
   public double availability() {
     return Math.min(super.availability(), leaseManager.availability());
+  }
+
+  private <K> Mono<K> request(Mono<K> actual) {
+    return request(Mono::defer, actual, Mono::error);
+  }
+
+  private <K> Flux<K> request(Flux<K> actual) {
+    return request(Flux::defer, actual, Flux::error);
   }
 
   private <K, T extends Publisher<K>> T request(
