@@ -33,23 +33,28 @@ public class InterceptorFactory {
     return new InterceptorFactory(this);
   }
 
-  public InterceptorFactory addInterceptorSet(Supplier<InterceptorSet> interceptor) {
+  public InterceptorFactory tailInterceptorSet(Supplier<InterceptorSet> interceptor) {
     interceptors.add(interceptor);
     return this;
   }
 
+  public InterceptorFactory headInterceptorSet(Supplier<InterceptorSet> interceptor) {
+    interceptors.add(0, interceptor);
+    return this;
+  }
+
   public InterceptorFactory addConnectionInterceptor(DuplexConnectionInterceptor interceptor) {
-    addInterceptorSet(() -> new InterceptorSet().connection(interceptor));
+    tailInterceptorSet(() -> new InterceptorSet().connection(interceptor));
     return this;
   }
 
   public InterceptorFactory addRequesterInterceptor(RSocketInterceptor interceptor) {
-    addInterceptorSet(() -> new InterceptorSet().requesterRSocket(interceptor));
+    tailInterceptorSet(() -> new InterceptorSet().requesterRSocket(interceptor));
     return this;
   }
 
   public InterceptorFactory addHandlerInterceptor(RSocketInterceptor interceptor) {
-    addInterceptorSet(() -> new InterceptorSet().handlerRSocket(interceptor));
+    tailInterceptorSet(() -> new InterceptorSet().handlerRSocket(interceptor));
     return this;
   }
 

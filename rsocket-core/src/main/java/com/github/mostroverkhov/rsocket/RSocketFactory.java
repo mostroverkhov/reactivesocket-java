@@ -96,7 +96,7 @@ public class RSocketFactory {
       implements Acceptor<ClientTransportAcceptor, Function<RSocket, RSocket>>,
           ClientTransportAcceptor {
 
-    protected Supplier<Function<RSocket, RSocket>> acceptor =
+    private Supplier<Function<RSocket, RSocket>> acceptor =
         () -> rSocket -> new AbstractRSocket() {};
     private Consumer<Throwable> errorConsumer = Throwable::printStackTrace;
     private int fragmentationMtu = 0;
@@ -132,7 +132,7 @@ public class RSocketFactory {
 
     public ClientRSocketFactory addInterceptorSet(
         Supplier<InterceptorFactory.InterceptorSet> interceptor) {
-      this.interceptorFactory.addInterceptorSet(interceptor);
+      this.interceptorFactory.tailInterceptorSet(interceptor);
       return this;
     }
 
@@ -221,7 +221,7 @@ public class RSocketFactory {
       return this;
     }
 
-    protected class StartClient implements Start<RSocket> {
+    private class StartClient implements Start<RSocket> {
       private final Supplier<ClientTransport> transportClient;
       private final InterceptorFactory interceptorFactory;
 
@@ -294,7 +294,7 @@ public class RSocketFactory {
       private void enableLeaseSupport() {
         leaseConsumer.ifPresent(
             leaseConsumer ->
-                interceptorFactory.addInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
+                interceptorFactory.headInterceptorSet(LeaseSupport.forClient(leaseConsumer)));
       }
 
       private void enableKeepAliveSupport() {
@@ -337,9 +337,9 @@ public class RSocketFactory {
       return this;
     }
 
-    protected ServerRSocketFactory addInterceptor(
+    public ServerRSocketFactory addInterceptor(
         Supplier<InterceptorFactory.InterceptorSet> interceptor) {
-      this.interceptorFactory.addInterceptorSet(interceptor);
+      this.interceptorFactory.tailInterceptorSet(interceptor);
       return this;
     }
 
@@ -464,7 +464,7 @@ public class RSocketFactory {
                 .map(LeaseSupport::forServer)
                 .orElseGet(LeaseSupport::missingForServer);
 
-        interceptorFactory.addInterceptorSet(leaseInterceptor);
+        interceptorFactory.headInterceptorSet(leaseInterceptor);
       }
     }
   }
