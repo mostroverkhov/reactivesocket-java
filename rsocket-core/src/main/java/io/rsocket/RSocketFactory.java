@@ -41,6 +41,7 @@ import io.rsocket.transport.ClientTransport;
 import io.rsocket.transport.ServerTransport;
 import io.rsocket.util.ConnectionUtils;
 import io.rsocket.util.EmptyPayload;
+import io.rsocket.util.MultiSubscriberRSocket;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.function.*;
@@ -330,7 +331,7 @@ public class RSocketFactory {
                           ? new RequesterLeaseHandler.Impl(CLIENT_TAG, leases.receiver())
                           : RequesterLeaseHandler.Noop;
 
-                  RSocketRequester rSocketRequester =
+                  RSocket rSocketRequester =
                       new RSocketRequester(
                           allocator,
                           multiplexer.asClientConnection(),
@@ -341,6 +342,10 @@ public class RSocketFactory {
                           keepAliveTimeout(),
                           keepAliveHandler,
                           requesterLeaseHandler);
+
+                  if (!isLeaseEnabled) {
+                    rSocketRequester = new MultiSubscriberRSocket(rSocketRequester);
+                  }
 
                   ByteBuf setupFrame =
                       SetupFrameFlyweight.encode(
@@ -376,7 +381,7 @@ public class RSocketFactory {
                               leaseOptions.statsWindowCount())
                           : ResponderLeaseHandler.Noop;
 
-                  RSocketResponder rSocketResponder =
+                  RSocket rSocketResponder =
                       new RSocketResponder(
                           allocator,
                           multiplexer.asServerConnection(),
@@ -629,7 +634,7 @@ public class RSocketFactory {
                       ? new RequesterLeaseHandler.Impl(SERVER_TAG, leases.receiver())
                       : RequesterLeaseHandler.Noop;
 
-              RSocketRequester rSocketRequester =
+              RSocket rSocketRequester =
                   new RSocketRequester(
                       allocator,
                       wrappedMultiplexer.asServerConnection(),
@@ -641,6 +646,9 @@ public class RSocketFactory {
                       keepAliveHandler,
                       requesterLeaseHandler);
 
+              if (!isLeaseEnabled) {
+                rSocketRequester = new MultiSubscriberRSocket(rSocketRequester);
+              }
               RSocket wrappedRSocketRequester = plugins.applyRequester(rSocketRequester);
 
               return acceptor
@@ -661,7 +669,7 @@ public class RSocketFactory {
                                     leaseOptions.statsWindowCount())
                                 : ResponderLeaseHandler.Noop;
 
-                        RSocketResponder rSocketResponder =
+                        RSocket rSocketResponder =
                             new RSocketResponder(
                                 allocator,
                                 wrappedMultiplexer.asClientConnection(),
