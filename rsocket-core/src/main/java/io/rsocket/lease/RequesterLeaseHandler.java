@@ -72,7 +72,7 @@ public interface RequesterLeaseHandler extends Availability, Disposable {
     }
   }
 
-  RequesterLeaseHandler Noop =
+  RequesterLeaseHandler None =
       new RequesterLeaseHandler() {
         @Override
         public boolean useLease() {

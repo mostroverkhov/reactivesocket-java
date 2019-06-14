@@ -329,7 +329,7 @@ public class RSocketFactory {
                   RequesterLeaseHandler requesterLeaseHandler =
                       isLeaseEnabled
                           ? new RequesterLeaseHandler.Impl(CLIENT_TAG, leases.receiver())
-                          : RequesterLeaseHandler.Noop;
+                          : RequesterLeaseHandler.None;
 
                   RSocket rSocketRequester =
                       new RSocketRequester(
@@ -379,7 +379,7 @@ public class RSocketFactory {
                               leases.sender(),
                               errorConsumer,
                               leaseOptions.statsWindowCount())
-                          : ResponderLeaseHandler.Noop;
+                          : ResponderLeaseHandler.None;
 
                   RSocket rSocketResponder =
                       new RSocketResponder(
@@ -428,7 +428,7 @@ public class RSocketFactory {
 
   public static class ServerRSocketFactory {
     private static final String SERVER_TAG = "server";
-    private static final Leases DEFAULT_LEASES = new Leases();
+    private static final Leases<?> DEFAULT_LEASES = new Leases();
 
     private SocketAcceptor acceptor;
     private PayloadDecoder payloadDecoder = PayloadDecoder.DEFAULT;
@@ -632,7 +632,7 @@ public class RSocketFactory {
               RequesterLeaseHandler requesterLeaseHandler =
                   isLeaseEnabled
                       ? new RequesterLeaseHandler.Impl(SERVER_TAG, leases.receiver())
-                      : RequesterLeaseHandler.Noop;
+                      : RequesterLeaseHandler.None;
 
               RSocket rSocketRequester =
                   new RSocketRequester(
@@ -666,8 +666,8 @@ public class RSocketFactory {
                                     allocator,
                                     leases.sender(),
                                     errorConsumer,
-                                    leaseOptions.statsWindowCount())
-                                : ResponderLeaseHandler.Noop;
+                                    leases.stats())
+                                : ResponderLeaseHandler.None;
 
                         RSocket rSocketResponder =
                             new RSocketResponder(

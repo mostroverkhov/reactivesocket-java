@@ -171,7 +171,7 @@ public class RSocketTest {
               requestAcceptor,
               DefaultPayload::create,
               throwable -> serverErrors.add(throwable),
-              ResponderLeaseHandler.Noop);
+              ResponderLeaseHandler.None);
 
       crs =
           new RSocketRequester(
@@ -180,7 +180,7 @@ public class RSocketTest {
               DefaultPayload::create,
               throwable -> clientErrors.add(throwable),
               StreamIdSupplier.clientSupplier(),
-              RequesterLeaseHandler.Noop);
+              RequesterLeaseHandler.None);
     }
 
     public void setRequestAcceptor(RSocket requestAcceptor) {

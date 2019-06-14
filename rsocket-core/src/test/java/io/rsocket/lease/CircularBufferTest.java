@@ -23,11 +23,11 @@ import org.junit.jupiter.api.Test;
 public class CircularBufferTest {
   private static final int MAX_SIZE = 3;
 
-  private LeaseStats.CircularBuffer<Integer> circularBuffer;
+  private LeaseStatsImpl.CircularBuffer<Integer> circularBuffer;
 
   @BeforeEach
   public void setUp() {
-    circularBuffer = new LeaseStats.CircularBuffer<>(MAX_SIZE);
+    circularBuffer = new LeaseStatsImpl.CircularBuffer<>(MAX_SIZE);
   }
 
   @Test
@@ -56,7 +56,7 @@ public class CircularBufferTest {
 
   @Test
   public void singleElementBuffer() {
-    circularBuffer = new LeaseStats.CircularBuffer<>(1);
+    circularBuffer = new LeaseStatsImpl.CircularBuffer<>(1);
     circularBuffer.offer(0).offer(1).offer(2);
     Assertions.assertThat(circularBuffer.size()).isEqualTo(1);
     Assertions.assertThat(circularBuffer.get(0)).isEqualTo(2);

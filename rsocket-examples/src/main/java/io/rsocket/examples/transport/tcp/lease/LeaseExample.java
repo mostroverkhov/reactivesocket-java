@@ -7,7 +7,6 @@ import io.rsocket.Payload;
 import io.rsocket.RSocket;
 import io.rsocket.RSocketFactory;
 import io.rsocket.lease.Lease;
-import io.rsocket.lease.LeaseStats;
 import io.rsocket.lease.Leases;
 import io.rsocket.transport.netty.client.TcpClientTransport;
 import io.rsocket.transport.netty.server.CloseableChannel;
@@ -64,7 +63,7 @@ public class LeaseExample {
     server.dispose();
   }
 
-  private static class LeaseSender implements Function<LeaseStats, Flux<Lease>> {
+  private static class LeaseSender implements Function<LeaseStatsImpl, Flux<Lease>> {
     private final String tag;
     private final int ttlMillis;
     private final int allowedRequests;
@@ -76,7 +75,7 @@ public class LeaseExample {
     }
 
     @Override
-    public Flux<Lease> apply(LeaseStats leaseStats) {
+    public Flux<Lease> apply(LeaseStatsImpl leaseStats) {
       return Flux.interval(ofSeconds(1), ofSeconds(10))
           .onBackpressureLatest()
           .map(
